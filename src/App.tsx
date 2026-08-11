@@ -276,6 +276,7 @@ function SoundToggle() {
 }
 
 function Header({ page, navigate }: { page: Page; navigate: (page: Page) => void }) {
+  const site = useCmsStore((state) => state.siteSettings);
   const [open, setOpen] = useState(false);
   const select = (next: Page) => { setOpen(false); navigate(next); };
   useEffect(() => {
@@ -301,7 +302,7 @@ function Header({ page, navigate }: { page: Page; navigate: (page: Page) => void
                 </motion.button>
               ))}
             </nav>
-            <div className="menu-foot"><span>Nairobi / Arusha</span><a href="mailto:journeys@olkinyei.com">journeys@olkinyei.com</a><span>+254 700 428 181</span></div>
+            <div className="menu-foot"><span>{site.addresses.map((entry) => entry.city).join(" / ")}</span><a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a><span>{site.phone}</span></div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -346,15 +347,16 @@ function ImageReveal({ src, alt, className = "" }: { src: string; alt: string; c
 }
 
 function Footer({ navigate }: { navigate: (page: Page) => void; openAdmin?: () => void }) {
+  const site = useCmsStore((state) => state.siteSettings);
   return (
     <footer className="footer">
       <div className="footer-main"><Logo /><h2>Go where the wild still sets the pace.</h2><MagneticButton className="button button--sand" onClick={() => navigate("contact")}>Begin a private journey <ArrowRight size={17} /></MagneticButton></div>
       <div className="footer-links">
         <div><span>Explore</span>{navItems.slice(1, 6).map((item) => <button key={item.page} onClick={() => navigate(item.page)}>{item.label}</button>)}</div>
-        <div><span>Find us</span><a href="mailto:journeys@olkinyei.com">journeys@olkinyei.com</a><a href="tel:+254700428181">+254 700 428 181</a><a href="https://www.instagram.com" target="_blank" rel="noreferrer">Instagram <ExternalLink size={12} /></a></div>
-        <div><span>Field offices</span><p>Karen, Nairobi</p><p>Sakina, Arusha</p></div>
+        <div><span>Find us</span><a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a><a href={`tel:${site.phone.replace(/\s+/g, "")}`}>{site.phone}</a>{site.social.map((entry) => <a key={entry.platform} href={entry.url} target="_blank" rel="noreferrer">{entry.platform} <ExternalLink size={12} /></a>)}</div>
+        <div><span>Field offices</span>{site.addresses.map((entry) => <p key={entry.city}>{entry.address}, {entry.city}</p>)}</div>
       </div>
-      <div className="footer-legal"><span>&copy; 2026 Olkinyei Expeditions</span><span>Responsible travel, designed in East Africa</span><button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>Back to top <ArrowDown className="rotate-180" size={14} /></button></div>
+      <div className="footer-legal"><span>&copy; {new Date().getFullYear()} {site.brandName}</span><span>Responsible travel, designed in East Africa</span><button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>Back to top <ArrowDown className="rotate-180" size={14} /></button></div>
     </footer>
   );
 }
@@ -362,6 +364,7 @@ function Footer({ navigate }: { navigate: (page: Page) => void; openAdmin?: () =
 function HomePage({ navigate, content, openSafari, onOpenPost }: { navigate: (page: Page) => void; content: EditableContent; openSafari: (safari: Safari) => void; onOpenPost: (slug: string) => void }) {
   const cmsHome = useCmsStore((state) => state.pages.find((item) => item.route === "/"));
   const site = useCmsStore((state) => state.siteSettings);
+  const liveSafaris = usePublishedSafaris();
   // Live blog posts from the CMS (Supabase blog_posts). Published only;
   // featured first, then newest. Static seed is just the offline fallback.
   const cmsPosts = useCmsStore((state) => state.blogPosts);
@@ -403,12 +406,12 @@ function HomePage({ navigate, content, openSafari, onOpenPost }: { navigate: (pa
       <section className="manifesto section-pad"><p className="vertical-label">THE OLKINYEI WAY</p><div className="manifesto-copy"><p className="eyebrow" data-reveal>Not a tour. A rare point of view.</p><h2 className="split-reveal">{content.homeStatement}</h2><button className="text-link" onClick={() => navigate("about")}>Discover our philosophy <ArrowRight size={16} /></button></div></section>
       <section className="migration-story">
         <div className="migration-image"><img src={imagery.migration} alt="A vast wildebeest herd crossing the Serengeti" loading="lazy" data-parallax /></div><div className="migration-overlay" />
-        <div className="migration-copy"><p className="eyebrow">01 / THE GREAT MOVEMENT</p><h2 className="split-reveal">Two million lives.<br />One ancient instinct.</h2><p>We follow the rains north, positioning private camps near the migration without crowding its path.</p><button className="text-link text-link--light" onClick={() => openSafari(safaris[0])}>Follow the migration <ArrowRight size={16} /></button></div>
+        <div className="migration-copy"><p className="eyebrow">01 / THE GREAT MOVEMENT</p><h2 className="split-reveal">Two million lives.<br />One ancient instinct.</h2><p>We follow the rains north, positioning private camps near the migration without crowding its path.</p><button className="text-link text-link--light" onClick={() => openSafari(liveSafaris[0] ?? safaris[0])}>Follow the migration <ArrowRight size={16} /></button></div>
         <div className="migration-track" aria-hidden="true"><span /><span /><span /><span /><span /><span /><span /></div>
       </section>
       <section className="journeys section-pad">
         <SectionHeading number="02" eyebrow="SIGNATURE JOURNEYS" title="Made for how you want to feel." text="Each route is a beginning. Your naturalist and journey designer shape the final expedition around season, pace and curiosity." />
-        <div className="journey-list">{safaris.slice(0, 4).map((safari, index) => <button key={safari.id} className="journey-row" onClick={() => openSafari(safari)} data-cursor data-reveal><span className="journey-index">0{index + 1}</span><span className="journey-thumb"><img src={safari.image} alt="" loading="lazy" /></span><span className="journey-name">{safari.title}</span><span className="journey-meta">{safari.region}<br />{safari.duration}</span><span className="journey-arrow"><ArrowRight /></span></button>)}</div>
+        <div className="journey-list">{liveSafaris.slice(0, 4).map((safari, index) => <button key={safari.id} className="journey-row" onClick={() => openSafari(safari)} data-cursor data-reveal><span className="journey-index">0{index + 1}</span><span className="journey-thumb"><img src={safari.image} alt="" loading="lazy" /></span><span className="journey-name">{safari.title}</span><span className="journey-meta">{safari.region}<br />{safari.duration}</span><span className="journey-arrow"><ArrowRight /></span></button>)}</div>
         <MagneticButton className="button button--outline" onClick={() => navigate("experiences")}>View all safaris <ArrowRight size={17} /></MagneticButton>
       </section>
       <section className="conservation-home"><ImageReveal src={imagery.elephant} alt="Elephant family walking through protected savanna" /><div className="conservation-copy"><p className="eyebrow">POSITIVE FOOTPRINT</p><h2 className="split-reveal">The wild is not ours to consume.</h2><p>{content.conservationStatement}</p><button className="text-link text-link--light" onClick={() => navigate("about")}>Our conservation commitments <ArrowRight size={16} /></button></div></section>
@@ -488,13 +491,42 @@ function ExperienceModal({ safari, onClose, onBook }: { safari: Safari; onClose:
   );
 }
 
+/**
+ * Published safari packages from the CMS. Falls back to the bundled seed data
+ * only while the database is empty or unreachable, so the site is never blank.
+ */
+function usePublishedSafaris(): Safari[] {
+  const cmsPackages = useCmsStore((state) => state.packages);
+  return useMemo(() => {
+    const live = cmsPackages.filter((pkg) => pkg.published && !pkg.archived);
+    if (live.length === 0) return safaris;
+    return live.map((pkg) => ({
+      id: pkg.slug || pkg.id,
+      title: pkg.title,
+      region: pkg.region,
+      duration: pkg.duration,
+      nights: pkg.nights,
+      price: pkg.price,
+      image: pkg.image,
+      gallery: pkg.gallery.length > 0 ? pkg.gallery : [pkg.image],
+      summary: pkg.summary,
+      signature: pkg.signature,
+      included: pkg.included,
+      excluded: pkg.excluded,
+      availability: pkg.availability,
+      coordinates: pkg.coordinates,
+    }));
+  }, [cmsPackages]);
+}
+
 function ExperiencesPage({ openSafari, onBook }: { openSafari: (safari: Safari) => void; onBook: (safari: Safari) => void }) {
   const [region, setRegion] = useState("All");
-  const visible = safaris.filter((safari) => region === "All" || safari.region.includes(region));
+  const liveSafaris = usePublishedSafaris();
+  const visible = liveSafaris.filter((safari) => region === "All" || safari.region.includes(region));
   return (
     <><PageHero eyebrow="PRIVATE SAFARIS" title="Journeys measured in moments." text="Eight signature routes, each privately guided and shaped around your pace." image={imagery.cheetah} /><section className="experiences-intro section-pad"><SectionHeading number="01" eyebrow="THE COLLECTION" title="A starting point, never a fixed itinerary." text="Choose the feeling that draws you. We will tailor the route, camps and rhythm to the season and the people travelling." /><div className="filter-bar" aria-label="Filter safaris by region"><Filter size={15} />{["All", "Serengeti", "Maasai Mara", "Tanzania"].map((item) => <button key={item} className={region === item ? "active" : ""} onClick={() => setRegion(item)}>{item}</button>)}</div></section>
       <section className="experience-catalogue">{visible.map((safari, index) => <article className="experience-item" key={safari.id} data-reveal><button className="experience-image" onClick={() => openSafari(safari)} aria-label={`View ${safari.title}`}><img src={safari.image} alt={`${safari.title} in ${safari.region}`} loading="lazy" /><span>View journey <ArrowRight /></span></button><div className="experience-number">{String(index + 1).padStart(2, "0")}</div><div className="experience-info"><p>{safari.region}</p><h2>{safari.title}</h2><p>{safari.summary}</p><dl><div><dt>Time</dt><dd>{safari.duration}</dd></div><div><dt>From</dt><dd>{formatCurrency(safari.price)} pp</dd></div><div><dt>Season</dt><dd>{safari.availability.slice(0, 4).join(" / ")}</dd></div></dl><div className="experience-actions"><button className="text-link" onClick={() => openSafari(safari)}>View details <ArrowRight size={16} /></button><button className="text-link" onClick={() => onBook(safari)}>Book now <ArrowRight size={16} /></button></div></div></article>)}</section>
-      <section className="bespoke-banner"><div><p className="eyebrow">SOMETHING ELSE IN MIND?</p><h2>Let us make the map around you.</h2><p>Tell us what you love, who is travelling and how you want to feel. We will begin with a blank page.</p></div><MagneticButton className="button button--sand" onClick={() => onBook(safaris[0])}>Create a bespoke safari <ArrowRight size={17} /></MagneticButton></section></>
+      <section className="bespoke-banner"><div><p className="eyebrow">SOMETHING ELSE IN MIND?</p><h2>Let us make the map around you.</h2><p>Tell us what you love, who is travelling and how you want to feel. We will begin with a blank page.</p></div><MagneticButton className="button button--sand" onClick={() => onBook(liveSafaris[0] ?? safaris[0])}>Create a bespoke safari <ArrowRight size={17} /></MagneticButton></section></>
   );
 }
 
@@ -1000,7 +1032,8 @@ function BookingLookup({ bookings }: { bookings: Booking[] }) {
 }
 
 function ContactPage({ initialSafari, bookings, onStored, content }: { initialSafari: Safari | null; bookings: Booking[]; onStored: (booking: Booking) => void; content: EditableContent }) {
-  return <><PageHero eyebrow="PRIVATE JOURNEY DESIGN" title="Your safari starts with a conversation." text="Share a few details. One dedicated designer will shape a thoughtful first proposal within one business day." image={imagery.lodge} /><section className="booking-section section-pad"><div className="booking-aside"><p className="eyebrow">PLAN YOUR JOURNEY</p><h2>There are no ordinary questions.</h2><p>We will consider the season, lodge character, flight connections and the pace that works for your party. Nothing is confirmed until it feels right.</p><div><Headphones /><span>Prefer to speak?</span><a href="tel:+254700428181">+254 700 428 181</a><a href={`mailto:${content.contactEmail}`}>{content.contactEmail}</a></div></div><BookingForm initialSafari={initialSafari} onStored={onStored} /></section><section className="contact-details section-pad"><div><p className="eyebrow">FIELD OFFICES</p><h2>Close to the places we love.</h2></div><address><div><span>KENYA</span><strong>Nairobi</strong><p>Marula Lane, Karen<br />Monday to Friday, 08:00 - 18:00 EAT</p></div><div><span>TANZANIA</span><strong>Arusha</strong><p>Sakina Road, Arusha<br />Monday to Friday, 08:00 - 18:00 EAT</p></div></address><BookingLookup bookings={bookings} /></section></>;
+  const site = useCmsStore((state) => state.siteSettings);
+  return <><PageHero eyebrow="PRIVATE JOURNEY DESIGN" title="Your safari starts with a conversation." text="Share a few details. One dedicated designer will shape a thoughtful first proposal within one business day." image={imagery.lodge} /><section className="booking-section section-pad"><div className="booking-aside"><p className="eyebrow">PLAN YOUR JOURNEY</p><h2>There are no ordinary questions.</h2><p>We will consider the season, lodge character, flight connections and the pace that works for your party. Nothing is confirmed until it feels right.</p><div><Headphones /><span>Prefer to speak?</span><a href={`tel:${site.phone.replace(/\s+/g, "")}`}>{site.phone}</a><a href={`mailto:${content.contactEmail}`}>{content.contactEmail}</a></div></div><BookingForm initialSafari={initialSafari} onStored={onStored} /></section><section className="contact-details section-pad"><div><p className="eyebrow">FIELD OFFICES</p><h2>Close to the places we love.</h2></div><address>{site.addresses.map((entry) => <div key={entry.city}><span>{entry.city}</span><strong>{entry.city}</strong><p>{entry.address}<br />Monday to Friday, 08:00 - 18:00 EAT</p></div>)}</address><BookingLookup bookings={bookings} /></section></>;
 }
 
 function AdminPanel({ bookings, onClose, onBookings, content, onContent }: { bookings: Booking[]; onClose: () => void; onBookings: (bookings: Booking[]) => void; content: EditableContent; onContent: (content: EditableContent) => void }) {
@@ -1047,6 +1080,36 @@ function AdminPanel({ bookings, onClose, onBookings, content, onContent }: { boo
     {tab === "Operations" && <div className="operations"><section><h2>Guides</h2><p><strong>Daniel Ole Nkoitoi</strong><span>Senior guide / Mara</span><em>In field</em></p><p><strong>Neema Lema</strong><span>Photographic guide / Serengeti</span><em>Available</em></p><p><strong>Joseph Mollel</strong><span>Walking guide / Tarangire</span><em>In field</em></p></section><section><h2>Vehicles</h2><p><strong>OLK-04</strong><span>Land Cruiser / Arusha</span><em>Ready</em></p><p><strong>OLK-07</strong><span>Photo vehicle / Mara</span><em>Service due</em></p><p><strong>OLK-09</strong><span>Land Cruiser / Nairobi</span><em>Ready</em></p></section><section><h2>Availability</h2><p><strong>Migration season</strong><span>July to September</span><em>Limited</em></p><p><strong>Green season</strong><span>January to March</span><em>Open</em></p></section><section><h2>Invoices</h2><p><strong>Automated draft invoices</strong><span>Generated after confirmation</span><em>{bookings.filter((item) => item.status === "Confirmed").length} pending</em></p></section></div>}
     </main></div>}
   </motion.div>;
+}
+
+/**
+ * Maintenance / Coming Soon screen.
+ *
+ * Shown to public visitors when the corresponding Site Settings flag is on.
+ * The CMS at /#/admin is never gated, so administrators cannot lock themselves
+ * out while the site is closed.
+ */
+function SiteClosedScreen({ mode }: { mode: "maintenance" | "coming-soon" }) {
+  const site = useCmsStore((state) => state.siteSettings);
+  const isMaintenance = mode === "maintenance";
+  return (
+    <div className="site-closed">
+      <div className="site-closed-inner">
+        <Logo />
+        <p className="eyebrow">{isMaintenance ? "TEMPORARILY CLOSED" : "OPENING SOON"}</p>
+        <h1>{isMaintenance ? "We are tending to the camp." : "Something rare is on its way."}</h1>
+        <p className="site-closed-copy">
+          {isMaintenance
+            ? "Our website is briefly offline for maintenance. Our team is still reachable and will answer every enquiry."
+            : "Olkinyei Expeditions is preparing private journeys across Kenya and Tanzania. Reach out and we will write to you first."}
+        </p>
+        <div className="site-closed-contact">
+          {site.contactEmail && <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>}
+          {site.phone && <a href={`tel:${site.phone.replace(/\s+/g, "")}`}>{site.phone}</a>}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function PublicApp() {
@@ -1211,6 +1274,18 @@ export default function App() {
       <AdminApp />
     </Suspense>
   ) : (
-    <PublicApp />
+    <PublicSite />
   );
+}
+
+/**
+ * Public entry point. Applies the Site Settings gates before rendering the
+ * website. The CMS route is handled above and is never gated, so enabling
+ * maintenance mode can never lock an administrator out.
+ */
+function PublicSite() {
+  const site = useCmsStore((state) => state.siteSettings);
+  if (site.maintenanceMode) return <SiteClosedScreen mode="maintenance" />;
+  if (site.comingSoon) return <SiteClosedScreen mode="coming-soon" />;
+  return <PublicApp />;
 }
