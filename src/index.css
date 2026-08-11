@@ -90,6 +90,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 /* Studio CMS is intentionally hidden from the public site. No launcher, no visible entry points. */
 
+/* ============ Maintenance / Coming soon ============ */
+.site-closed { display: grid; min-height: 100vh; place-items: center; padding: 2rem; background: #20251e; color: var(--ivory); text-align: center; }
+.site-closed-inner { max-width: 560px; }
+.site-closed .brand-lockup { justify-content: center; margin-bottom: 3rem; }
+.site-closed .eyebrow { color: var(--sand); }
+.site-closed h1 { margin: 1.5rem 0; font-family: var(--serif); font-size: clamp(2.6rem, 6vw, 4.4rem); font-weight: 400; letter-spacing: -.05em; line-height: .95; }
+.site-closed-copy { font-size: .88rem; line-height: 1.9; color: rgba(243, 236, 223, .75); }
+.site-closed-contact { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; margin-top: 3rem; padding-top: 2rem; border-top: 1px solid rgba(243, 236, 223, .15); }
+.site-closed-contact a { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; border-bottom: 1px solid rgba(243, 236, 223, .3); padding-bottom: .2rem; }
+.site-closed-contact a:hover { border-color: var(--sand); color: var(--sand); }
+
 /* ============ Homepage testimonial preview ============ */
 .home-testimonials { background: #ece5d7; }
 .home-testimonial-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4vw; margin-bottom: 3rem; }
