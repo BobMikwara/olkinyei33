@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, MapPin, Star, Languages, Calendar, Search } from "lucide-react";
+import { Plus, MapPin, Star, Languages, Calendar, Search, Trash2 } from "lucide-react";
 import { store, useStore } from "../store";
-import { Button, Card, Input, Textarea, Badge, Modal, PageHeader, EmptyState, Avatar } from "../ui";
+import { Button, Card, Input, Textarea, Badge, Modal, ConfirmDialog, PageHeader, EmptyState, Avatar } from "../ui";
 import type { Guide } from "../types";
 
 function GuideEditor({ guide, onClose }: { guide: Guide | null; onClose: () => void }) {
@@ -50,6 +50,7 @@ export default function GuidesManager() {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Guide | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<Guide | null>(null);
 
   const filtered = guides.filter((g) => !search || g.name.toLowerCase().includes(search.toLowerCase()) || g.speciality.toLowerCase().includes(search.toLowerCase()));
 
@@ -79,8 +80,18 @@ export default function GuidesManager() {
                 <Badge variant={guide.status === "active" ? "success" : "neutral"} dot>{guide.status}</Badge>
               </div>
               <p className="mt-4 line-clamp-3 text-[12px] leading-relaxed text-[var(--admin-fg-muted)]">{guide.bio}</p>
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                {guide.locations.map((loc) => <span key={loc} className="rounded-full bg-[var(--admin-surface-2)] px-2 py-0.5 text-[10px]"><MapPin size={9} className="mr-0.5 inline" />{loc}</span>)}
+              <div className="mt-4 flex items-end justify-between gap-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {guide.locations.map((loc) => <span key={loc} className="rounded-full bg-[var(--admin-surface-2)] px-2 py-0.5 text-[10px]"><MapPin size={9} className="mr-0.5 inline" />{loc}</span>)}
+                </div>
+                <button
+                  onClick={(event) => { event.stopPropagation(); setConfirmDelete(guide); }}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--admin-fg-muted)] transition-colors hover:bg-red-500/10 hover:text-red-400"
+                  aria-label={`Remove ${guide.name}`}
+                  title="Remove guide"
+                >
+                  <Trash2 size={13} />
+                </button>
               </div>
             </Card>
           ))}
@@ -89,6 +100,16 @@ export default function GuidesManager() {
 
       {editing && <GuideEditor guide={editing} onClose={() => setEditing(null)} />}
       {showNew && <GuideEditor guide={null} onClose={() => setShowNew(false)} />}
+      {confirmDelete && (
+        <ConfirmDialog
+          open
+          onClose={() => setConfirmDelete(null)}
+          onConfirm={() => { void store.actions.deleteGuide(confirmDelete.id); setConfirmDelete(null); }}
+          title={`Remove ${confirmDelete.name}?`}
+          description="The guide is archived and removed from the CMS and website. Existing bookings keep their assignment record."
+          confirmLabel="Remove guide"
+        />
+      )}
     </motion.div>
   );
 }
