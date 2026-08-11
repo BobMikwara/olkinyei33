@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, Truck, AlertCircle, Search } from "lucide-react";
+import { Plus, Truck, AlertCircle, Search, Trash2 } from "lucide-react";
 import { store, useStore } from "../store";
-import { Button, Card, Input, Textarea, Select, Badge, Modal, PageHeader, EmptyState } from "../ui";
+import { Button, Card, Input, Textarea, Select, Badge, Modal, ConfirmDialog, PageHeader, EmptyState } from "../ui";
 import type { Vehicle } from "../types";
 
 const STATUS_COLORS: Record<Vehicle["status"], "success" | "warning" | "danger" | "info"> = {
@@ -55,6 +55,7 @@ export default function VehiclesManager() {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Vehicle | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<Vehicle | null>(null);
 
   const filtered = vehicles.filter((v) => !search || v.fleetCode.toLowerCase().includes(search.toLowerCase()) || v.model.toLowerCase().includes(search.toLowerCase()));
   const counts = { Ready: vehicles.filter((v) => v.status === "Ready").length, "In field": vehicles.filter((v) => v.status === "In field").length, "Service due": vehicles.filter((v) => v.status === "Service due").length };
@@ -96,6 +97,16 @@ export default function VehiclesManager() {
                 <div><span className="text-[var(--admin-fg-muted)]">Mileage:</span> <span>{vehicle.mileage.toLocaleString()} km</span></div>
               </div>
               {vehicle.status === "Service due" && <div className="mt-3 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-[10.5px] text-amber-400"><AlertCircle size={12} />Service overdue</div>}
+              <div className="mt-3 flex justify-end border-t border-[var(--admin-border)] pt-3">
+                <button
+                  onClick={(event) => { event.stopPropagation(); setConfirmDelete(vehicle); }}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--admin-fg-muted)] transition-colors hover:bg-red-500/10 hover:text-red-400"
+                  aria-label={`Remove ${vehicle.fleetCode}`}
+                  title="Remove vehicle"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
             </Card>
           ))}
         </div>
@@ -103,6 +114,16 @@ export default function VehiclesManager() {
 
       {editing && <VehicleEditor vehicle={editing} onClose={() => setEditing(null)} />}
       {showNew && <VehicleEditor vehicle={null} onClose={() => setShowNew(false)} />}
+      {confirmDelete && (
+        <ConfirmDialog
+          open
+          onClose={() => setConfirmDelete(null)}
+          onConfirm={() => { void store.actions.deleteVehicle(confirmDelete.id); setConfirmDelete(null); }}
+          title={`Remove ${confirmDelete.fleetCode}?`}
+          description="The vehicle is archived and removed from the active fleet. Existing bookings keep their assignment record."
+          confirmLabel="Remove vehicle"
+        />
+      )}
     </motion.div>
   );
 }
