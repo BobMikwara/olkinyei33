@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Search, MapPin, Globe, DollarSign, Heart, Edit3, User as UserIcon, Shield } from "lucide-react";
+import { Search, MapPin, Globe, DollarSign, Heart, Edit3, Trash2, User as UserIcon, Shield } from "lucide-react";
 import { store, useStore } from "../store";
 import { ASSIGNABLE_ROLES, ROLE_DESCRIPTIONS, ROLE_LABELS } from "../constants";
 import { hasCloudBackend } from "../../lib/supabase";
@@ -37,6 +37,7 @@ export function CustomersManager() {
   const customers = useStore((state) => state.customers);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Customer | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Customer | null>(null);
   const filtered = customers.filter((c) => !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.email.toLowerCase().includes(search.toLowerCase()));
 
   const tierColors: Record<Customer["lifetimeValue"], "accent" | "success" | "warning" | "info" | "neutral"> = {
@@ -67,11 +68,34 @@ export function CustomersManager() {
               <div><p className="text-[10px] uppercase tracking-wider text-[var(--admin-fg-muted)]">Spent</p><p className="mt-1 font-serif text-lg font-light">${Math.round(c.totalSpent / 1000)}k</p></div>
               <div><p className="text-[10px] uppercase tracking-wider text-[var(--admin-fg-muted)]">Last Trip</p><p className="mt-1 font-serif text-sm font-light">{new Date(c.lastTrip).toLocaleDateString(undefined, { month: "short", year: "2-digit" })}</p></div>
             </div>
+            <div className="mt-3 flex justify-end border-t border-[var(--admin-border)] pt-3">
+              <button
+                onClick={(event) => { event.stopPropagation(); setConfirmDelete(c); }}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--admin-fg-muted)] transition-colors hover:bg-red-500/10 hover:text-red-400"
+                aria-label={`Remove ${c.name}`}
+                title="Remove customer"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
           </Card>
         ))}
       </div>
 
       {editing && <CustomerEditor customer={editing} onClose={() => setEditing(null)} />}
+      {confirmDelete && (
+        <Modal
+          open
+          onClose={() => setConfirmDelete(null)}
+          size="sm"
+          title={`Remove ${confirmDelete.name}?`}
+          description="The customer profile is archived and removed from this directory. All bookings, invoices, and payment history are preserved."
+          footer={<>
+            <Button variant="ghost" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+            <Button variant="danger" onClick={() => { void store.actions.deleteCustomer(confirmDelete.id); setConfirmDelete(null); }}>Remove customer</Button>
+          </>}
+        ><p /></Modal>
+      )}
     </motion.div>
   );
 }
