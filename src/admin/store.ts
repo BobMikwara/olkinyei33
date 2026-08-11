@@ -623,6 +623,15 @@ if (typeof window !== "undefined" && supabase) {
     .on("postgres_changes", { event: "DELETE", schema: "public", table: "testimonials" }, (payload) => {
       applyTestimonialRealtime("DELETE", payload.old);
     })
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "packages" }, (payload) => {
+      applyPackageRealtime("INSERT", payload.new);
+    })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "packages" }, (payload) => {
+      applyPackageRealtime("UPDATE", payload.new);
+    })
+    .on("postgres_changes", { event: "DELETE", schema: "public", table: "packages" }, (payload) => {
+      applyPackageRealtime("DELETE", payload.old);
+    })
     .subscribe();
 
   // Boot the content. Public bundle shares this module, so visitors get
@@ -630,12 +639,8 @@ if (typeof window !== "undefined" && supabase) {
   void loadCloudCmsContent();
   void loadCloudBlogPosts();
   void loadCloudTestimonials();
+  void loadCloudPackages();
 }
-
-// blog_posts.id is a Postgres uuid. Locally generated ids (uid(), "bl1", …)
-// are NOT valid uuids, so upserting them is rejected outright — that silent
-// rejection is why CMS posts never reached the public site.
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function newBlogId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -645,6 +650,199 @@ export function newBlogId(): string {
     const value = char === "x" ? random : (random & 0x3) | 0x8;
     return value.toString(16);
   });
+}
+
+// Postgres uuid columns reject locally generated ids ("p1", "m3x8kq-a7f2c1"),
+// so writes must detect them and let the database mint the id instead.
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// ============ Safari packages (public.packages) ============
+// The public website reads these rows, so CMS edits must reach the database.
+
+type DbPackageRow = {
+  id: string;
+  slug: string;
+  title: string;
+  region: string;
+  duration: string;
+  nights: number | null;
+  price_usd: number;
+  discount: number | null;
+  hero_image: string;
+  gallery: string[] | null;
+  summary: string;
+  description: string | null;
+  signature: string | null;
+  highlights: string[] | null;
+  included: string[] | null;
+  excluded: string[] | null;
+  availability: string[] | null;
+  country: string[] | null;
+  parks: string[] | null;
+  wildlife: string[] | null;
+  difficulty: SafariPackage["difficulty"] | null;
+  tags: string[] | null;
+  featured: boolean | null;
+  published: boolean | null;
+  archived: boolean | null;
+  coordinates: [number, number] | null;
+  seo_title: string | null;
+  seo_description: string | null;
+  publish_date: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function packageFromRow(row: DbPackageRow): SafariPackage {
+  return {
+    id: row.id,
+    slug: row.slug,
+    title: row.title,
+    region: row.region,
+    duration: row.duration,
+    nights: row.nights ?? 0,
+    price: Number(row.price_usd) || 0,
+    discount: row.discount ?? undefined,
+    image: row.hero_image ?? "",
+    gallery: row.gallery ?? [],
+    summary: row.summary ?? "",
+    description: row.description ?? "",
+    signature: row.signature ?? "",
+    highlights: row.highlights ?? [],
+    included: row.included ?? [],
+    excluded: row.excluded ?? [],
+    availability: row.availability ?? [],
+    country: (row.country ?? []) as SafariPackage["country"],
+    parks: row.parks ?? [],
+    wildlife: row.wildlife ?? [],
+    difficulty: row.difficulty ?? "Moderate",
+    tags: row.tags ?? [],
+    featured: Boolean(row.featured),
+    published: Boolean(row.published),
+    archived: Boolean(row.archived),
+    coordinates: row.coordinates ?? [0, 0],
+    seo: { title: row.seo_title ?? row.title, description: row.seo_description ?? row.summary ?? "" },
+    publishDate: row.publish_date ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at ?? row.created_at,
+  };
+}
+
+function packageToRow(pkg: SafariPackage): Record<string, unknown> {
+  return {
+    id: pkg.id,
+    slug: pkg.slug,
+    title: pkg.title,
+    region: pkg.region,
+    duration: pkg.duration,
+    nights: pkg.nights,
+    price_usd: pkg.price,
+    discount: pkg.discount ?? null,
+    hero_image: pkg.image,
+    gallery: pkg.gallery,
+    summary: pkg.summary,
+    description: pkg.description,
+    signature: pkg.signature,
+    highlights: pkg.highlights,
+    included: pkg.included,
+    excluded: pkg.excluded,
+    availability: pkg.availability,
+    country: pkg.country,
+    parks: pkg.parks,
+    wildlife: pkg.wildlife,
+    difficulty: pkg.difficulty,
+    tags: pkg.tags,
+    featured: pkg.featured,
+    published: pkg.published,
+    archived: Boolean(pkg.archived),
+    coordinates: pkg.coordinates,
+    seo_title: pkg.seo.title,
+    seo_description: pkg.seo.description,
+    publish_date: pkg.publishDate ?? null,
+  };
+}
+
+let packagesBootstrapped = false;
+
+async function loadCloudPackages(): Promise<void> {
+  const client = supabase;
+  if (!client || packagesBootstrapped) return;
+  packagesBootstrapped = true;
+  try {
+    const { data, error } = await client.from("packages").select("*").order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) return; // keep seed content until the table is populated
+    state = { ...state, packages: (data as DbPackageRow[]).map(packageFromRow) };
+    emit();
+    if (import.meta.env.DEV) console.debug(`[Olkinyei] Packages synced: ${data.length}`);
+  } catch (error) {
+    packagesBootstrapped = false;
+    console.error(
+      "[Olkinyei] Could not load safari packages from Supabase:",
+      error instanceof Error ? error.message : error,
+      "\nRun supabase/packages_sync.sql, then confirm anonymous SELECT is permitted on public.packages.",
+    );
+  }
+}
+
+function applyPackageRealtime(action: "INSERT" | "UPDATE" | "DELETE", row: unknown) {
+  if (!row || typeof row !== "object") return;
+  const rec = row as DbPackageRow;
+  if (action === "DELETE") {
+    state = { ...state, packages: state.packages.filter((p) => p.id !== rec.id) };
+    emit();
+    return;
+  }
+  const next = packageFromRow(rec);
+  const exists = state.packages.some((p) => p.id === next.id);
+  state = {
+    ...state,
+    packages: exists ? state.packages.map((p) => (p.id === next.id ? next : p)) : [next, ...state.packages],
+  };
+  emit();
+}
+
+/** Persists a package to the database. Errors surface, never swallowed. */
+function packageCloudSave(pkg: SafariPackage | null, deletedId?: string): void {
+  const client = supabase;
+  if (!client) return;
+  void (async () => {
+    try {
+      if (deletedId) {
+        if (!UUID_PATTERN.test(deletedId)) return;
+        const { error } = await client.from("packages").delete().eq("id", deletedId);
+        if (error) throw error;
+        return;
+      }
+      if (!pkg) return;
+      const row = packageToRow(pkg);
+      if (UUID_PATTERN.test(pkg.id)) {
+        const { error } = await client.from("packages").upsert(row, { onConflict: "id" });
+        if (error) throw error;
+        return;
+      }
+      // Seed ids ("p1") are not uuids: let Postgres mint one, keyed by slug.
+      const { id: _seedId, ...withoutId } = row;
+      const { data, error } = await client
+        .from("packages")
+        .upsert(withoutId, { onConflict: "slug" })
+        .select("id")
+        .single();
+      if (error) throw error;
+      const cloudId = (data as { id: string }).id;
+      state = { ...state, packages: state.packages.map((p) => (p.id === pkg.id ? { ...p, id: cloudId } : p)) };
+      emit();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (import.meta.env.DEV) console.error("[Olkinyei] package cloud write failed:", message);
+      notify({
+        type: "error",
+        title: "Not published to the website",
+        message: `Saved locally, but Supabase rejected it: ${message.slice(0, 140)}`,
+        duration: 9000,
+      });
+    }
+  })();
 }
 
 // ============ Testimonials (public.testimonials) ============
@@ -997,7 +1195,26 @@ const actions = {
     logActivity("login", "Authentication", user.id, "Successful sign-in");
     emit();
     void actions.syncCloudStaff();
+    // Staff see rows RLS hides from anonymous visitors (pending testimonials,
+    // unpublished packages, drafts). Re-pull them now that a session exists.
+    void actions.reloadStaffContent();
     return { ok: true, mustChangePassword: Boolean(user.mustChangePassword) };
+  },
+
+  /**
+   * Re-reads collections whose visibility depends on the caller's role.
+   * Anonymous page-load only returns public rows; after sign-in the same
+   * queries return the full set, so they must run again.
+   */
+  async reloadStaffContent(): Promise<void> {
+    testimonialsBootstrapped = false;
+    packagesBootstrapped = false;
+    blogBootstrapped = false;
+    await Promise.all([
+      loadCloudTestimonials(),
+      loadCloudPackages(),
+      loadCloudBlogPosts(),
+    ]);
   },
 
   logout() {
@@ -1030,6 +1247,7 @@ const actions = {
     state = { ...state, currentUserId: sessionUser.user.id, session, users };
     emit();
     void actions.syncCloudStaff();
+    void actions.reloadStaffContent();
     return true;
   },
 
@@ -1333,30 +1551,37 @@ const actions = {
 
   // Packages
   createPackage(pkg: Omit<SafariPackage, "id" | "createdAt" | "updatedAt" | "slug">) {
-    const id = uid();
+    // packages.id is a Postgres uuid column.
+    const id = newBlogId();
     const slug = pkg.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     const entry: SafariPackage = { ...pkg, id, slug, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     state = { ...state, packages: [entry, ...state.packages] };
     logActivity("created", "Package", id, entry.title);
     notify({ type: "success", title: "Package created", message: `${entry.title} is now in your library.` });
     emit();
+    packageCloudSave(entry);
     return entry;
   },
   updatePackage(id: string, patch: Partial<SafariPackage>) {
     const pkg = state.packages.find((p) => p.id === id);
     if (!pkg) return;
-    state = { ...state, packages: state.packages.map((p) => p.id === id ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p) };
+    const next = { ...pkg, ...patch, updatedAt: new Date().toISOString() };
+    state = { ...state, packages: state.packages.map((p) => (p.id === id ? next : p)) };
     logActivity("updated", "Package", id, pkg.title);
     notify({ type: "success", title: "Package updated", message: `${pkg.title} saved.` });
     emit();
+    packageCloudSave(next);
   },
   deletePackage(id: string) {
     const pkg = state.packages.find((p) => p.id === id);
     if (!pkg) return;
-    state = { ...state, packages: state.packages.map((p) => p.id === id ? { ...p, archived: true } : p) };
+    // Archive rather than delete: bookings reference packages by title.
+    const next = { ...pkg, archived: true, published: false };
+    state = { ...state, packages: state.packages.map((p) => (p.id === id ? next : p)) };
     logActivity("archived", "Package", id, pkg.title);
     notify({ type: "info", title: "Package archived", message: `${pkg.title} is hidden from the public site.` });
     emit();
+    packageCloudSave(next);
   },
   duplicatePackage(id: string) {
     const pkg = state.packages.find((p) => p.id === id);
@@ -1658,6 +1883,46 @@ const actions = {
     emit();
   },
 
+  /**
+   * Archives a guide. Bookings reference guides by id, so the record is kept
+   * and simply hidden from the CMS list and the public website.
+   */
+  async deleteGuide(id: string): Promise<void> {
+    const actor = currentUser();
+    if (!actor || !can(actor, "guides", "delete")) {
+      notify({ type: "error", title: "Not permitted", message: "You do not have permission to remove guides." });
+      return;
+    }
+    const target = state.guides.find((g) => g.id === id);
+    if (!target) return;
+
+    const assigned = state.bookings.filter((b) => b.assignedGuideId === id).length;
+    state = { ...state, guides: state.guides.filter((g) => g.id !== id) };
+    emit();
+
+    if (supabase && UUID_PATTERN.test(id)) {
+      const { error } = await supabase
+        .from("guides")
+        .update({ archived: true, archived_at: new Date().toISOString(), archived_by: actor.id, active: false })
+        .eq("id", id);
+      if (error) {
+        notify({ type: "error", title: "Could not remove guide", message: error.message });
+        state = { ...state, guides: [target, ...state.guides] }; // restore on failure
+        emit();
+        return;
+      }
+    }
+    audit("guide.archived", "guide", "success", { actorId: actor.id, targetId: id });
+    logActivity("archived", "Guide", id, target.name);
+    notify({
+      type: "success",
+      title: "Guide removed",
+      message: assigned > 0
+        ? `${target.name} archived. ${assigned} existing booking${assigned === 1 ? "" : "s"} keep their record.`
+        : `${target.name} archived.`,
+    });
+  },
+
   // Vehicles
   createVehicle(v: Omit<Vehicle, "id" | "createdAt">) {
     const id = uid();
@@ -1675,6 +1940,86 @@ const actions = {
     logActivity("updated", "Vehicle", id, v.fleetCode);
     notify({ type: "success", title: "Vehicle updated", message: `${v.fleetCode} saved.` });
     emit();
+  },
+
+  /**
+   * Archives a vehicle. Bookings reference vehicles by id, so the fleet record
+   * is retained and hidden rather than destroyed.
+   */
+  async deleteVehicle(id: string): Promise<void> {
+    const actor = currentUser();
+    if (!actor || !can(actor, "vehicles", "delete")) {
+      notify({ type: "error", title: "Not permitted", message: "You do not have permission to remove vehicles." });
+      return;
+    }
+    const target = state.vehicles.find((v) => v.id === id);
+    if (!target) return;
+
+    const assigned = state.bookings.filter((b) => b.assignedVehicleId === id).length;
+    state = { ...state, vehicles: state.vehicles.filter((v) => v.id !== id) };
+    emit();
+
+    if (supabase && UUID_PATTERN.test(id)) {
+      const { error } = await supabase
+        .from("vehicles")
+        .update({ archived: true, archived_at: new Date().toISOString(), archived_by: actor.id })
+        .eq("id", id);
+      if (error) {
+        notify({ type: "error", title: "Could not remove vehicle", message: error.message });
+        state = { ...state, vehicles: [target, ...state.vehicles] };
+        emit();
+        return;
+      }
+    }
+    audit("vehicle.archived", "vehicle", "success", { actorId: actor.id, targetId: id });
+    logActivity("archived", "Vehicle", id, target.fleetCode);
+    notify({
+      type: "success",
+      title: "Vehicle removed",
+      message: assigned > 0
+        ? `${target.fleetCode} archived. ${assigned} existing booking${assigned === 1 ? "" : "s"} keep their record.`
+        : `${target.fleetCode} archived.`,
+    });
+  },
+
+  /**
+   * Archives a customer. Bookings and invoices must survive, so the profile is
+   * retained in the database and removed from the active CMS directory.
+   */
+  async deleteCustomer(id: string): Promise<void> {
+    const actor = currentUser();
+    if (!actor || !can(actor, "customers", "delete")) {
+      notify({ type: "error", title: "Not permitted", message: "You do not have permission to remove customers." });
+      return;
+    }
+    const target = state.customers.find((c) => c.id === id);
+    if (!target) return;
+
+    const history = state.bookings.filter((b) => b.customerId === id).length;
+    state = { ...state, customers: state.customers.filter((c) => c.id !== id) };
+    emit();
+
+    if (supabase && UUID_PATTERN.test(id)) {
+      const { error } = await supabase
+        .from("customers")
+        .update({ archived: true, archived_at: new Date().toISOString(), archived_by: actor.id })
+        .eq("id", id);
+      if (error) {
+        notify({ type: "error", title: "Could not remove customer", message: error.message });
+        state = { ...state, customers: [target, ...state.customers] };
+        emit();
+        return;
+      }
+    }
+    audit("customer.archived", "customer", "success", { actorId: actor.id, targetId: id });
+    logActivity("archived", "Customer", id, target.name);
+    notify({
+      type: "success",
+      title: "Customer removed",
+      message: history > 0
+        ? `${target.name} archived. ${history} booking${history === 1 ? "" : "s"} and all invoices are preserved.`
+        : `${target.name} archived.`,
+    });
   },
 
   // Customers
