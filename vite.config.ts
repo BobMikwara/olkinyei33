@@ -16,4 +16,8 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
     },
   },
+  server: {
+    // Accept the Arena preview proxy host so the live preview can load.
+    allowedHosts: true,
+  },
 });

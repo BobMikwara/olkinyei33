@@ -218,6 +218,18 @@ export type Booking = {
   customerId?: string;
 };
 
+/**
+ * The single authoritative Safari Package model. Supabase `public.packages`
+ * is the source of truth; `packageFromRow` / `packageToRow` in `store.ts`
+ * are the only mapping between this camelCase model and the database's
+ * snake_case columns. Both the Studio CMS and the public website consume
+ * this exact type — there is no separate public "Safari" model.
+ *
+ * Field naming mirrors the database exactly: `included` is the
+ * `public.packages.included` jsonb array and `excluded` is the
+ * `public.packages.excluded` jsonb array. The "Not included" label used in
+ * the CMS/public UI is simply the display name for `excluded`.
+ */
 export type SafariPackage = {
   id: string;
   slug: string;

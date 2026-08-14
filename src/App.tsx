@@ -30,15 +30,12 @@ import {
   Eye,
   Filter,
   Headphones,
-  ImagePlus,
-  LockKeyhole,
   Menu,
   Minus,
   Pause,
   Play,
   Plus,
   Search,
-  Settings2,
   ShieldCheck,
   Star,
   Volume2,
@@ -48,21 +45,19 @@ import {
 import {
   Booking,
   Destination,
-  Safari,
   blogPosts,
   destinations,
   galleryItems,
   imagery,
-  safaris,
   timeline,
 } from "./data";
+import type { SafariPackage } from "./admin/types";
 import {
   getCloudBookings,
   hasCloudBackend,
   persistBooking,
   subscribeToBookings,
   supabase,
-  updateCloudBookingStatus,
 } from "./lib/supabase";
 import { store as cmsStore, useStore as useCmsStore } from "./admin/store";
 import { SOURCE_LABELS } from "./admin/reviewProviders";
@@ -107,7 +102,7 @@ const defaultContent: EditableContent = {
 };
 
 const emptyBooking: Omit<Booking, "reference" | "createdAt" | "status"> = {
-  safari: safaris[0].title,
+  safari: "",
   startDate: "",
   endDate: "",
   adults: 2,
@@ -361,7 +356,7 @@ function Footer({ navigate }: { navigate: (page: Page) => void; openAdmin?: () =
   );
 }
 
-function HomePage({ navigate, content, openSafari, onOpenPost }: { navigate: (page: Page) => void; content: EditableContent; openSafari: (safari: Safari) => void; onOpenPost: (slug: string) => void }) {
+function HomePage({ navigate, content, openSafari, onOpenPost }: { navigate: (page: Page) => void; content: EditableContent; openSafari: (safari: SafariPackage) => void; onOpenPost: (slug: string) => void }) {
   const cmsHome = useCmsStore((state) => state.pages.find((item) => item.route === "/"));
   const site = useCmsStore((state) => state.siteSettings);
   const liveSafaris = usePublishedSafaris();
@@ -406,7 +401,7 @@ function HomePage({ navigate, content, openSafari, onOpenPost }: { navigate: (pa
       <section className="manifesto section-pad"><p className="vertical-label">THE OLKINYEI WAY</p><div className="manifesto-copy"><p className="eyebrow" data-reveal>Not a tour. A rare point of view.</p><h2 className="split-reveal">{content.homeStatement}</h2><button className="text-link" onClick={() => navigate("about")}>Discover our philosophy <ArrowRight size={16} /></button></div></section>
       <section className="migration-story">
         <div className="migration-image"><img src={imagery.migration} alt="A vast wildebeest herd crossing the Serengeti" loading="lazy" data-parallax /></div><div className="migration-overlay" />
-        <div className="migration-copy"><p className="eyebrow">01 / THE GREAT MOVEMENT</p><h2 className="split-reveal">Two million lives.<br />One ancient instinct.</h2><p>We follow the rains north, positioning private camps near the migration without crowding its path.</p><button className="text-link text-link--light" onClick={() => openSafari(liveSafaris[0] ?? safaris[0])}>Follow the migration <ArrowRight size={16} /></button></div>
+        <div className="migration-copy"><p className="eyebrow">01 / THE GREAT MOVEMENT</p><h2 className="split-reveal">Two million lives.<br />One ancient instinct.</h2><p>We follow the rains north, positioning private camps near the migration without crowding its path.</p><button className="text-link text-link--light" onClick={() => { if (liveSafaris[0]) openSafari(liveSafaris[0]); }}>Follow the migration <ArrowRight size={16} /></button></div>
         <div className="migration-track" aria-hidden="true"><span /><span /><span /><span /><span /><span /><span /></div>
       </section>
       <section className="journeys section-pad">
@@ -476,8 +471,8 @@ function AboutPage({ navigate }: { navigate: (page: Page) => void }) {
   );
 }
 
-function ExperienceModal({ safari, onClose, onBook }: { safari: Safari; onClose: () => void; onBook: (safari: Safari) => void }) {
-  const [image, setImage] = useState(safari.gallery[0]);
+function ExperienceModal({ safari, onClose, onBook }: { safari: SafariPackage; onClose: () => void; onBook: (safari: SafariPackage) => void }) {
+  const [image, setImage] = useState(safari.gallery[0] ?? safari.image);
   const closeKey = (event: KeyboardEvent<HTMLDivElement>) => event.key === "Escape" && onClose();
   useEffect(() => { document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = ""; }; }, []);
   return (
@@ -485,48 +480,34 @@ function ExperienceModal({ safari, onClose, onBook }: { safari: Safari; onClose:
       <motion.div className="experience-sheet" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ duration: 0.65, ease: [0.83, 0, 0.17, 1] }}>
         <button className="sheet-close" onClick={onClose} aria-label="Close safari details"><X /></button>
         <div className="sheet-gallery"><img src={image} alt={`${safari.title} safari landscape`} /><div>{safari.gallery.map((item, index) => <button key={item} onClick={() => setImage(item)} className={image === item ? "active" : ""} aria-label={`View gallery image ${index + 1}`}><img src={item} alt="" /></button>)}</div></div>
-        <div className="sheet-content"><p className="eyebrow">{safari.region}</p><h2 id="experience-title">{safari.title}</h2><p className="sheet-summary">{safari.summary}</p><div className="sheet-facts"><span><Clock3 />{safari.duration}</span><span><CircleDollarSign />From {formatCurrency(safari.price)} pp</span><span><CalendarDays />{safari.availability.join(" / ")}</span></div><div className="route-map" aria-label={`Illustrated route map for ${safari.title}`}><svg viewBox="0 0 500 220" role="img"><path d="M30 175 C120 80 195 190 280 90 S405 130 470 40" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="5 7" /><circle cx="30" cy="175" r="6" /><circle cx="280" cy="90" r="6" /><circle cx="470" cy="40" r="6" /><text x="30" y="205">ARRIVE</text><text x="245" y="120">WILD CAMP</text><text x="410" y="27">FINAL LODGE</text></svg></div><p className="signature"><span>Signature moments</span>{safari.signature}</p><div className="include-grid"><div><h3>Included</h3>{safari.included.map((item) => <p key={item}><Check />{item}</p>)}</div><div><h3>Not included</h3>{safari.excluded.map((item) => <p key={item}><Minus />{item}</p>)}</div></div><MagneticButton className="button button--dark" onClick={() => onBook(safari)}>Book this journey <ArrowRight size={17} /></MagneticButton></div>
+        <div className="sheet-content"><p className="eyebrow">{safari.region}</p><h2 id="experience-title">{safari.title}</h2><p className="sheet-summary">{safari.summary}</p><div className="sheet-facts"><span><Clock3 />{safari.duration}</span><span><CircleDollarSign />From {formatCurrency(safari.price)} pp</span><span><CalendarDays />{safari.availability.join(" / ")}</span></div><div className="route-map" aria-label={`Illustrated route map for ${safari.title}`}><svg viewBox="0 0 500 220" role="img"><path d="M30 175 C120 80 195 190 280 90 S405 130 470 40" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="5 7" /><circle cx="30" cy="175" r="6" /><circle cx="280" cy="90" r="6" /><circle cx="470" cy="40" r="6" /><text x="30" y="205">ARRIVE</text><text x="245" y="120">WILD CAMP</text><text x="410" y="27">FINAL LODGE</text></svg></div><p className="signature"><span>Signature moments</span>{safari.signature}</p><div className="include-grid"><div><h3>Included</h3>{safari.included.length > 0 ? safari.included.map((item) => <p key={item}><Check />{item}</p>) : <p>Every essential is included by default.</p>}</div><div><h3>Not included</h3>{safari.excluded.length > 0 ? safari.excluded.map((item) => <p key={item}><Minus />{item}</p>) : <p>Nothing further is excluded.</p>}</div></div><MagneticButton className="button button--dark" onClick={() => onBook(safari)}>Book this journey <ArrowRight size={17} /></MagneticButton></div>
       </motion.div>
     </motion.div>
   );
 }
 
 /**
- * Published safari packages from the CMS. Falls back to the bundled seed data
- * only while the database is empty or unreachable, so the site is never blank.
+ * Published safari packages for the public website. This is the single read
+ * path for safari packages: the shared CMS store loads `public.packages` from
+ * Supabase, and we only filter by publication status here. There is no
+ * hardcoded package list on the public side.
  */
-function usePublishedSafaris(): Safari[] {
+function usePublishedSafaris(): SafariPackage[] {
   const cmsPackages = useCmsStore((state) => state.packages);
-  return useMemo(() => {
-    const live = cmsPackages.filter((pkg) => pkg.published && !pkg.archived);
-    if (live.length === 0) return safaris;
-    return live.map((pkg) => ({
-      id: pkg.slug || pkg.id,
-      title: pkg.title,
-      region: pkg.region,
-      duration: pkg.duration,
-      nights: pkg.nights,
-      price: pkg.price,
-      image: pkg.image,
-      gallery: pkg.gallery.length > 0 ? pkg.gallery : [pkg.image],
-      summary: pkg.summary,
-      signature: pkg.signature,
-      included: pkg.included,
-      excluded: pkg.excluded,
-      availability: pkg.availability,
-      coordinates: pkg.coordinates,
-    }));
-  }, [cmsPackages]);
+  return useMemo(() => cmsPackages
+    .filter((pkg) => pkg.published && !pkg.archived)
+    .map((pkg) => ({ ...pkg, gallery: pkg.gallery.length > 0 ? pkg.gallery : [pkg.image] })),
+  [cmsPackages]);
 }
 
-function ExperiencesPage({ openSafari, onBook }: { openSafari: (safari: Safari) => void; onBook: (safari: Safari) => void }) {
+function ExperiencesPage({ openSafari, onBook }: { openSafari: (safari: SafariPackage) => void; onBook: (safari: SafariPackage) => void }) {
   const [region, setRegion] = useState("All");
   const liveSafaris = usePublishedSafaris();
   const visible = liveSafaris.filter((safari) => region === "All" || safari.region.includes(region));
   return (
     <><PageHero eyebrow="PRIVATE SAFARIS" title="Journeys measured in moments." text="Eight signature routes, each privately guided and shaped around your pace." image={imagery.cheetah} /><section className="experiences-intro section-pad"><SectionHeading number="01" eyebrow="THE COLLECTION" title="A starting point, never a fixed itinerary." text="Choose the feeling that draws you. We will tailor the route, camps and rhythm to the season and the people travelling." /><div className="filter-bar" aria-label="Filter safaris by region"><Filter size={15} />{["All", "Serengeti", "Maasai Mara", "Tanzania"].map((item) => <button key={item} className={region === item ? "active" : ""} onClick={() => setRegion(item)}>{item}</button>)}</div></section>
       <section className="experience-catalogue">{visible.map((safari, index) => <article className="experience-item" key={safari.id} data-reveal><button className="experience-image" onClick={() => openSafari(safari)} aria-label={`View ${safari.title}`}><img src={safari.image} alt={`${safari.title} in ${safari.region}`} loading="lazy" /><span>View journey <ArrowRight /></span></button><div className="experience-number">{String(index + 1).padStart(2, "0")}</div><div className="experience-info"><p>{safari.region}</p><h2>{safari.title}</h2><p>{safari.summary}</p><dl><div><dt>Time</dt><dd>{safari.duration}</dd></div><div><dt>From</dt><dd>{formatCurrency(safari.price)} pp</dd></div><div><dt>Season</dt><dd>{safari.availability.slice(0, 4).join(" / ")}</dd></div></dl><div className="experience-actions"><button className="text-link" onClick={() => openSafari(safari)}>View details <ArrowRight size={16} /></button><button className="text-link" onClick={() => onBook(safari)}>Book now <ArrowRight size={16} /></button></div></div></article>)}</section>
-      <section className="bespoke-banner"><div><p className="eyebrow">SOMETHING ELSE IN MIND?</p><h2>Let us make the map around you.</h2><p>Tell us what you love, who is travelling and how you want to feel. We will begin with a blank page.</p></div><MagneticButton className="button button--sand" onClick={() => onBook(liveSafaris[0] ?? safaris[0])}>Create a bespoke safari <ArrowRight size={17} /></MagneticButton></section></>
+      <section className="bespoke-banner"><div><p className="eyebrow">SOMETHING ELSE IN MIND?</p><h2>Let us make the map around you.</h2><p>Tell us what you love, who is travelling and how you want to feel. We will begin with a blank page.</p></div><MagneticButton className="button button--sand" onClick={() => { if (liveSafaris[0]) onBook(liveSafaris[0]); }}>Create a bespoke safari <ArrowRight size={17} /></MagneticButton></section></>
   );
 }
 
@@ -534,14 +515,15 @@ function SafariMap({ selected, onSelect }: { selected: Destination; onSelect: (d
   return <div className="safari-map"><svg viewBox="0 0 100 100" role="img" aria-label="Interactive map of safari destinations in Kenya and Tanzania"><defs><filter id="soft"><feGaussianBlur stdDeviation="1.2" /></filter></defs><path d="M28 7L69 12 88 32 83 55 70 94 31 89 15 55 18 25Z" fill="#273024" stroke="#8d916f" strokeWidth=".4" /><path d="M20 37C43 28 57 42 84 30M28 62C48 52 62 65 79 58" fill="none" stroke="#6f765a" strokeWidth=".35" strokeDasharray="2 2" /><path d="M25 65C36 60 44 72 58 67S74 72 82 65" fill="none" stroke="#b9b497" opacity=".45" filter="url(#soft)" /></svg>{destinations.map((destination) => <button key={destination.name} className={selected.name === destination.name ? "active" : ""} style={{ left: `${destination.coordinates[0]}%`, top: `${destination.coordinates[1]}%` }} onClick={() => onSelect(destination)} aria-label={`Select ${destination.name}`}><span /><small>{destination.name}</small></button>)}<p className="map-kenya">KENYA</p><p className="map-tanzania">TANZANIA</p></div>;
 }
 
-function DestinationsPage({ onBook }: { onBook: (safari: Safari) => void }) {
+function DestinationsPage({ onBook }: { onBook: (safari: SafariPackage) => void }) {
   const [country, setCountry] = useState<"All" | "Kenya" | "Tanzania">("All");
   const [selected, setSelected] = useState(destinations[0]);
+  const liveSafaris = usePublishedSafaris();
   const list = useMemo(() => destinations.filter((destination) => country === "All" || destination.country === country), [country]);
   useEffect(() => { if (!list.some((item) => item.name === selected.name)) setSelected(list[0]); }, [list, selected.name]);
   return (
     <><PageHero eyebrow="KENYA + TANZANIA" title="The map is only the beginning." text="From volcanic highlands to endless grassland, explore the places that shape our journeys." image={imagery.mara} /><section className="destinations-map-section"><div className="map-side"><p className="eyebrow">01 / EXPLORE EAST AFRICA</p><h2 className="split-reveal">Move through the wild.</h2><div className="country-switch">{(["All", "Kenya", "Tanzania"] as const).map((item) => <button key={item} onClick={() => setCountry(item)} className={country === item ? "active" : ""}>{item}</button>)}</div><div className="destination-list">{list.map((item) => <button key={item.name} className={selected.name === item.name ? "active" : ""} onClick={() => setSelected(item)}><span>{item.country}</span>{item.name}<ArrowRight /></button>)}</div></div><SafariMap selected={selected} onSelect={setSelected} /><AnimatePresence mode="wait"><motion.div className="destination-focus" key={selected.name} initial={{ opacity: 0, y: 25 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }}><img src={selected.image} alt={`${selected.name} landscape`} /><div><p>{selected.country}</p><h3>{selected.name}</h3><p>{selected.description}</p><dl><div><dt>Best time</dt><dd>{selected.best}</dd></div><div><dt>Known for</dt><dd>{selected.animal}</dd></div></dl></div></motion.div></AnimatePresence></section>
-      <section className="destination-editorial section-pad"><SectionHeading number="02" eyebrow="TWO COUNTRIES, ONE ECOSYSTEM" title="Cross the border. Keep the story whole." text="The migration ignores national lines. Combining Kenya and Tanzania reveals the full movement of herds, weather and seasons." /><div className="country-stories"><article><ImageReveal src={imagery.lion} alt="Lion in the Maasai Mara" /><span>KENYA</span><h3>Intimate conservancies and the open Mara.</h3><p>Night drives, walking and fewer vehicles beyond reserve boundaries.</p></article><article><ImageReveal src={imagery.crater} alt="Wildebeest on Tanzania grassland" /><span>TANZANIA</span><h3>Scale that changes your sense of distance.</h3><p>The Serengeti, crater highlands and elephant paths of Tarangire.</p></article></div></section><section className="map-cta"><p>Not sure where the season will take you?</p><h2>Let the wildlife choose the route.</h2><MagneticButton className="button button--sand" onClick={() => onBook(safaris[0])}>Talk to a safari designer <ArrowRight size={17} /></MagneticButton></section></>
+      <section className="destination-editorial section-pad"><SectionHeading number="02" eyebrow="TWO COUNTRIES, ONE ECOSYSTEM" title="Cross the border. Keep the story whole." text="The migration ignores national lines. Combining Kenya and Tanzania reveals the full movement of herds, weather and seasons." /><div className="country-stories"><article><ImageReveal src={imagery.lion} alt="Lion in the Maasai Mara" /><span>KENYA</span><h3>Intimate conservancies and the open Mara.</h3><p>Night drives, walking and fewer vehicles beyond reserve boundaries.</p></article><article><ImageReveal src={imagery.crater} alt="Wildebeest on Tanzania grassland" /><span>TANZANIA</span><h3>Scale that changes your sense of distance.</h3><p>The Serengeti, crater highlands and elephant paths of Tarangire.</p></article></div></section><section className="map-cta"><p>Not sure where the season will take you?</p><h2>Let the wildlife choose the route.</h2><MagneticButton className="button button--sand" onClick={() => { if (liveSafaris[0]) onBook(liveSafaris[0]); }}>Talk to a safari designer <ArrowRight size={17} /></MagneticButton></section></>
   );
 }
 
@@ -757,6 +739,7 @@ function StarRating({ value, onChange }: { value: number; onChange: (rating: num
 }
 
 function TestimonialForm() {
+  const liveSafaris = usePublishedSafaris();
   const [form, setForm] = useState({
     guestName: "", guestEmail: "", guestLocation: "", safariPackage: "", quote: "", guestPhoto: "",
   });
@@ -822,7 +805,7 @@ function TestimonialForm() {
           <span>Safari experienced <small>(optional)</small></span>
           <select value={form.safariPackage} onChange={(e) => setForm({ ...form, safariPackage: e.target.value })}>
             <option value="">Select a journey</option>
-            {safaris.map((safari) => <option key={safari.id} value={safari.title}>{safari.title}</option>)}
+            {liveSafaris.map((safari) => <option key={safari.id} value={safari.title}>{safari.title}</option>)}
             <option value="Bespoke itinerary">Bespoke itinerary</option>
           </select>
         </label>
@@ -984,15 +967,21 @@ function PartyCounter({ label, value, onChange, min = 0 }: { label: string; valu
   return <div className="party-counter"><span>{label}</span><button type="button" onClick={() => onChange(Math.max(min, value - 1))} aria-label={`Remove one ${label}`}><Minus size={15} /></button><strong>{value}</strong><button type="button" onClick={() => onChange(value + 1)} aria-label={`Add one ${label}`}><Plus size={15} /></button></div>;
 }
 
-function BookingForm({ initialSafari, onStored }: { initialSafari: Safari | null; onStored: (booking: Booking) => void }) {
+function BookingForm({ initialSafari, onStored }: { initialSafari: SafariPackage | null; onStored: (booking: Booking) => void }) {
+  const liveSafaris = usePublishedSafaris();
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState({ ...emptyBooking, safari: initialSafari?.title ?? emptyBooking.safari });
+  const [form, setForm] = useState({ ...emptyBooking, safari: initialSafari?.title ?? liveSafaris[0]?.title ?? "" });
   const [errors, setErrors] = useState<string[]>([]);
   const [confirmation, setConfirmation] = useState<Booking | null>(null);
   const [consent, setConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [emailWarning, setEmailWarning] = useState("");
   useEffect(() => { if (initialSafari) setForm((current) => ({ ...current, safari: initialSafari.title })); }, [initialSafari]);
+  // Safaris load from Supabase asynchronously; default the journey to the
+  // first published package once it arrives if the visitor has not chosen one.
+  useEffect(() => {
+    setForm((current) => (current.safari ? current : { ...current, safari: liveSafaris[0]?.title ?? "" }));
+  }, [liveSafaris]);
   const update = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => setForm((current) => ({ ...current, [key]: value }));
   const next = () => {
     const missing = (step === 1 ? [!form.startDate && "Choose a start date", !form.endDate && "Choose an end date"] : []).filter(Boolean) as string[];
@@ -1018,7 +1007,7 @@ function BookingForm({ initialSafari, onStored }: { initialSafari: Safari | null
   if (confirmation) return <div className="booking-confirmation" role="status"><motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}><Check /></motion.div><p className="eyebrow">YOUR JOURNEY HAS BEGUN</p><h2>Asante, {confirmation.name.split(" ")[0]}.</h2><p>Your safari designer has received your request. A detailed first proposal will arrive at <strong>{confirmation.email}</strong> within one business day.</p>{emailWarning && <p className="email-warning">{emailWarning}</p>}<dl><div><dt>Booking reference</dt><dd>{confirmation.reference}</dd></div><div><dt>Journey</dt><dd>{confirmation.safari}</dd></div><div><dt>Travel dates</dt><dd>{confirmation.startDate} to {confirmation.endDate}</dd></div><div><dt>Status</dt><dd>{confirmation.status}</dd></div></dl><button className="button button--dark" onClick={() => window.print()}><Download size={16} /> Save confirmation</button><button className="text-link" onClick={() => { setConfirmation(null); setStep(1); setForm({ ...emptyBooking }); setConsent(false); }}>Plan another journey <ArrowRight size={15} /></button></div>;
   return (
     <form className="booking-form" onSubmit={submit} noValidate><Stepper step={step} /><AnimatePresence mode="wait">
-      {step === 1 && <motion.div className="form-step" key="step-1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}><p className="eyebrow">01 / WHERE AND WHEN</p><h2>Begin with the shape of the journey.</h2><Field label="Safari experience"><select value={form.safari} onChange={(e) => update("safari", e.target.value)}>{safaris.map((safari) => <option key={safari.id}>{safari.title}</option>)}</select></Field><div className="field-row"><Field label="Arrival date"><input type="date" min={new Date().toISOString().slice(0, 10)} value={form.startDate} onChange={(e) => update("startDate", e.target.value)} /></Field><Field label="Departure date"><input type="date" min={form.startDate || new Date().toISOString().slice(0, 10)} value={form.endDate} onChange={(e) => update("endDate", e.target.value)} /></Field></div><div className="availability-calendar"><div><CalendarDays /><span>Live planning calendar</span></div>{["Jun", "Jul", "Aug", "Sep", "Oct", "Nov"].map((month, index) => <span key={month} className={index === 1 || index === 2 ? "limited" : "open"}>{month}<small>{index === 1 || index === 2 ? "Limited" : "Open"}</small></span>)}</div><div className="party-row"><PartyCounter label="Adults" value={form.adults} min={1} onChange={(value) => update("adults", value)} /><PartyCounter label="Children" value={form.children} onChange={(value) => update("children", value)} /></div></motion.div>}
+      {step === 1 && <motion.div className="form-step" key="step-1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}><p className="eyebrow">01 / WHERE AND WHEN</p><h2>Begin with the shape of the journey.</h2><Field label="Safari experience"><select value={form.safari} onChange={(e) => update("safari", e.target.value)}><option value="">Choose a journey</option>{liveSafaris.map((safari) => <option key={safari.id}>{safari.title}</option>)}</select></Field><div className="field-row"><Field label="Arrival date"><input type="date" min={new Date().toISOString().slice(0, 10)} value={form.startDate} onChange={(e) => update("startDate", e.target.value)} /></Field><Field label="Departure date"><input type="date" min={form.startDate || new Date().toISOString().slice(0, 10)} value={form.endDate} onChange={(e) => update("endDate", e.target.value)} /></Field></div><div className="availability-calendar"><div><CalendarDays /><span>Live planning calendar</span></div>{["Jun", "Jul", "Aug", "Sep", "Oct", "Nov"].map((month, index) => <span key={month} className={index === 1 || index === 2 ? "limited" : "open"}>{month}<small>{index === 1 || index === 2 ? "Limited" : "Open"}</small></span>)}</div><div className="party-row"><PartyCounter label="Adults" value={form.adults} min={1} onChange={(value) => update("adults", value)} /><PartyCounter label="Children" value={form.children} onChange={(value) => update("children", value)} /></div></motion.div>}
       {step === 2 && <motion.div className="form-step" key="step-2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}><p className="eyebrow">02 / YOUR PREFERENCES</p><h2>Tell us what comfort means to you.</h2><Field label="Accommodation style"><select value={form.accommodation} onChange={(e) => update("accommodation", e.target.value)}><option>A considered mix of camps and lodges</option><option>Exceptional luxury lodges</option><option>Intimate camps under canvas</option><option>Private villas for the family</option></select></Field><div className="field-row"><Field label="Pickup location"><input value={form.pickup} onChange={(e) => update("pickup", e.target.value)} /></Field><Field label="Arrival airport"><select value={form.airport} onChange={(e) => update("airport", e.target.value)}><option>Jomo Kenyatta International Airport (NBO)</option><option>Kilimanjaro International Airport (JRO)</option><option>Julius Nyerere International Airport (DAR)</option><option>Wilson Airport (WIL)</option></select></Field></div><Field label="Approximate budget" hint="Per guest, excluding international flights"><select value={form.budget} onChange={(e) => update("budget", e.target.value)}><option>$5,000 - $8,000 per person</option><option>$8,000 - $12,000 per person</option><option>$12,000 - $18,000 per person</option><option>$18,000+ per person</option></select></Field><Field label="Anything we should know?" hint="Celebrations, mobility, dietary needs, photography or a particular animal."><textarea rows={4} value={form.requests} onChange={(e) => update("requests", e.target.value)} placeholder="Tell us what would make this journey yours..." /></Field><Field label="Preferred payment"><select value={form.payment} onChange={(e) => update("payment", e.target.value)}><option>Secure card payment</option><option>Bank transfer</option><option>Speak with my designer first</option></select></Field></motion.div>}
       {step === 3 && <motion.div className="form-step" key="step-3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}><p className="eyebrow">03 / YOUR DETAILS</p><h2>Where should your designer reach you?</h2><Field label="Full name"><input autoComplete="name" value={form.name} onChange={(e) => update("name", e.target.value)} placeholder="Your full name" /></Field><div className="field-row"><Field label="Email"><input type="email" autoComplete="email" value={form.email} onChange={(e) => update("email", e.target.value)} placeholder="you@example.com" /></Field><Field label="Phone / WhatsApp"><input type="tel" autoComplete="tel" value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="+1 212 555 0198" /></Field></div><div className="booking-review"><h3>Your request</h3><p><span>Safari</span>{form.safari}</p><p><span>Dates</span>{form.startDate} to {form.endDate}</p><p><span>Party</span>{form.adults} adults, {form.children} children</p><p><span>Accommodation</span>{form.accommodation}</p><p><span>Budget</span>{form.budget}</p></div><label className="consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /> <span>I agree to the privacy notice and understand this is a planning request, not an immediate charge.</span></label></motion.div>}
     </AnimatePresence>{errors.length > 0 && <div className="form-errors" role="alert">{errors.map((error) => <p key={error}>{error}</p>)}</div>}<div className="form-nav">{step > 1 && <button type="button" className="text-link" onClick={() => { setErrors([]); setStep(step - 1); }}><ArrowLeft size={15} /> Back</button>}<span />{step < 3 ? <button type="button" className="button button--dark" onClick={next}>Continue <ArrowRight size={16} /></button> : <button type="submit" className="button button--dark" disabled={submitting}>{submitting ? "Securing request..." : "Send safari request"} <ArrowRight size={16} /></button>}</div><p className="secure-note"><ShieldCheck size={15} /> {hasCloudBackend ? "Encrypted cloud storage and instant planner notification are active." : "Demo mode stores this request privately in your browser. Connect Supabase for cloud delivery."}</p></form>
@@ -1031,55 +1020,9 @@ function BookingLookup({ bookings }: { bookings: Booking[] }) {
   return <div className="lookup"><h3>Already planning with us?</h3><p>Enter your booking reference or email to view your request.</p><div><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="OLK-2026-XXXXX or email" aria-label="Booking reference or email" /><button onClick={() => setSearched(true)}><Search size={16} /> Find booking</button></div>{searched && (match ? <div className="lookup-result"><span>{match.status}</span><strong>{match.reference}</strong><p>{match.safari}</p><small>{match.startDate} to {match.endDate}</small></div> : <p className="lookup-empty">No matching journey found. Check the reference and try again.</p>)}</div>;
 }
 
-function ContactPage({ initialSafari, bookings, onStored, content }: { initialSafari: Safari | null; bookings: Booking[]; onStored: (booking: Booking) => void; content: EditableContent }) {
+function ContactPage({ initialSafari, bookings, onStored, content }: { initialSafari: SafariPackage | null; bookings: Booking[]; onStored: (booking: Booking) => void; content: EditableContent }) {
   const site = useCmsStore((state) => state.siteSettings);
   return <><PageHero eyebrow="PRIVATE JOURNEY DESIGN" title="Your safari starts with a conversation." text="Share a few details. One dedicated designer will shape a thoughtful first proposal within one business day." image={imagery.lodge} /><section className="booking-section section-pad"><div className="booking-aside"><p className="eyebrow">PLAN YOUR JOURNEY</p><h2>There are no ordinary questions.</h2><p>We will consider the season, lodge character, flight connections and the pace that works for your party. Nothing is confirmed until it feels right.</p><div><Headphones /><span>Prefer to speak?</span><a href={`tel:${site.phone.replace(/\s+/g, "")}`}>{site.phone}</a><a href={`mailto:${content.contactEmail}`}>{content.contactEmail}</a></div></div><BookingForm initialSafari={initialSafari} onStored={onStored} /></section><section className="contact-details section-pad"><div><p className="eyebrow">FIELD OFFICES</p><h2>Close to the places we love.</h2></div><address>{site.addresses.map((entry) => <div key={entry.city}><span>{entry.city}</span><strong>{entry.city}</strong><p>{entry.address}<br />Monday to Friday, 08:00 - 18:00 EAT</p></div>)}</address><BookingLookup bookings={bookings} /></section></>;
-}
-
-function AdminPanel({ bookings, onClose, onBookings, content, onContent }: { bookings: Booking[]; onClose: () => void; onBookings: (bookings: Booking[]) => void; content: EditableContent; onContent: (content: EditableContent) => void }) {
-  const [authenticated, setAuthenticated] = useState(false); const [adminEmail, setAdminEmail] = useState(""); const [code, setCode] = useState(""); const [error, setError] = useState(""); const [tab, setTab] = useState("Overview");
-  const [prices, setPrices] = useState<Record<string, number>>(() => readStorage("olkinyei-prices", Object.fromEntries(safaris.map((safari) => [safari.id, safari.price]))));
-  const [galleryUrl, setGalleryUrl] = useState(""); const [galleryAssets, setGalleryAssets] = useState<string[]>(() => readStorage("olkinyei-gallery-admin", galleryItems.map((item) => item.src)));
-  const [posts, setPosts] = useState(() => readStorage("olkinyei-blog-posts", blogPosts));
-  const tabs = ["Overview", "Bookings", "Packages", "Content", "Media", "Operations"];
-  useEffect(() => {
-    const closeOnEscape = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") onClose(); };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
-  const login = async (event: FormEvent) => {
-    event.preventDefault();
-    setError("");
-    if (hasCloudBackend && supabase) {
-      const { error: authError } = await supabase.auth.signInWithPassword({ email: adminEmail, password: code });
-      if (authError) { setError(authError.message); return; }
-      const cloudBookings = await getCloudBookings();
-      onBookings(cloudBookings);
-      setAuthenticated(true);
-      return;
-    }
-    if (code === "OLK2026") setAuthenticated(true); else setError("That access code is not recognised.");
-  };
-  const setStatus = (reference: string, status: Booking["status"]) => { const updated = bookings.map((booking) => booking.reference === reference ? { ...booking, status } : booking); localStorage.setItem("olkinyei-bookings", JSON.stringify(updated)); onBookings(updated); void updateCloudBookingStatus(reference, status); };
-  const savePrice = (id: string, value: number) => { const updated = { ...prices, [id]: value }; setPrices(updated); localStorage.setItem("olkinyei-prices", JSON.stringify(updated)); };
-  const addAsset = () => { if (!/^https?:\/\//.test(galleryUrl)) return; const updated = [galleryUrl, ...galleryAssets]; setGalleryAssets(updated); localStorage.setItem("olkinyei-gallery-admin", JSON.stringify(updated)); setGalleryUrl(""); };
-  const editPost = (index: number) => {
-    const title = window.prompt("Edit article title", posts[index].title)?.trim();
-    if (!title) return;
-    const updated = posts.map((post, current) => current === index ? { ...post, title } : post);
-    setPosts(updated);
-    localStorage.setItem("olkinyei-blog-posts", JSON.stringify(updated));
-  };
-  return <motion.div className="admin-shell" role="dialog" aria-modal="true" aria-label="Olkinyei administration" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-    {!authenticated ? <div className="admin-login"><button onClick={onClose} aria-label="Close admin"><X /></button><Logo /><LockKeyhole size={34} /><h2>Private field office</h2><p>{hasCloudBackend ? "Sign in with an authorised Olkinyei team account." : <>Use the demonstration access code <strong>OLK2026</strong>.</>}</p><form onSubmit={login}>{hasCloudBackend && <input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="Team email" autoComplete="username" required />}<input type="password" value={code} onChange={(e) => setCode(e.target.value)} placeholder={hasCloudBackend ? "Password" : "Access code"} autoComplete="current-password" autoFocus={!hasCloudBackend} /><button className="button button--dark" type="submit">Enter dashboard <ArrowRight size={16} /></button>{error && <p role="alert">{error}</p>}</form></div> : <div className="admin-dashboard"><aside><Logo compact /><nav>{tabs.map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>)}</nav><button onClick={onClose}><ArrowLeft size={15} /> Return to site</button></aside><main><header><div><p>Olkinyei Studio</p><h1>{tab}</h1></div><button onClick={onClose} aria-label="Close dashboard"><X /></button></header>
-    {tab === "Overview" && <div className="admin-overview"><div className="admin-metrics"><div><span>Active requests</span><strong>{bookings.filter((item) => item.status !== "Cancelled").length}</strong><small>Synced from booking engine</small></div><div><span>Expected guests</span><strong>{bookings.reduce((sum, item) => sum + item.adults + item.children, 0)}</strong><small>Across current requests</small></div><div><span>Published packages</span><strong>{safaris.length}</strong><small>All available online</small></div><div><span>Media assets</span><strong>{galleryAssets.length}</strong><small>Optimised source URLs</small></div></div><div className="admin-chart"><h2>Request activity</h2><div>{[28, 52, 36, 74, 61, 88, 68, 94, 76, 83, 58, 72].map((height, index) => <span key={index} style={{ height: `${height}%` }}><small>{index + 1}</small></span>)}</div></div><div className="admin-recent"><h2>Latest requests</h2>{bookings.slice(0, 4).map((booking) => <p key={booking.reference}><span>{booking.reference}</span><strong>{booking.name}</strong><small>{booking.safari}</small><em>{booking.status}</em></p>)}{!bookings.length && <p>No requests yet. New public booking submissions appear here instantly.</p>}</div></div>}
-    {tab === "Bookings" && <div className="admin-table"><div className="table-head"><span>Reference / Guest</span><span>Journey</span><span>Travel</span><span>Status</span></div>{bookings.map((booking) => <div key={booking.reference}><span><strong>{booking.reference}</strong><small>{booking.name}<br />{booking.email}</small></span><span>{booking.safari}<small>{booking.adults + booking.children} guests / {booking.budget}</small></span><span>{booking.startDate}<small>to {booking.endDate}</small></span><span><select value={booking.status} onChange={(e) => setStatus(booking.reference, e.target.value as Booking["status"])}><option>New</option><option>Confirmed</option><option>In planning</option><option>Cancelled</option></select></span></div>)}{!bookings.length && <p className="admin-empty">No bookings have been submitted yet.</p>}</div>}
-    {tab === "Packages" && <div className="package-admin"><div className="admin-note"><Settings2 /><p>Pricing changes are stored in the local content layer and available for the next published release.</p></div>{safaris.map((safari) => <div key={safari.id}><img src={safari.image} alt="" /><span><strong>{safari.title}</strong><small>{safari.duration} / {safari.region}</small></span><label>From USD<input type="number" value={prices[safari.id]} onChange={(e) => savePrice(safari.id, Number(e.target.value))} /></label></div>)}</div>}
-    {tab === "Content" && <div className="content-admin"><div><p className="eyebrow">HOME PAGE</p><label>Brand statement<textarea value={content.homeStatement} onChange={(e) => onContent({ ...content, homeStatement: e.target.value })} rows={5} /></label><label>Conservation statement<textarea value={content.conservationStatement} onChange={(e) => onContent({ ...content, conservationStatement: e.target.value })} rows={5} /></label><label>Journey design email<input type="email" value={content.contactEmail} onChange={(e) => onContent({ ...content, contactEmail: e.target.value })} /></label><small>Changes save automatically and are visible on the public site.</small></div><div><p className="eyebrow">SEO JOURNAL</p>{posts.map((post, index) => <article key={`${post.title}-${index}`}><span>{post.category}</span><strong>{post.title}</strong><small>{post.date}</small><button onClick={() => editPost(index)} aria-label={`Edit ${post.title}`}><Settings2 /></button></article>)}</div></div>}
-    {tab === "Media" && <div className="media-admin"><div className="media-upload"><ImagePlus /><h2>Add a hosted media asset</h2><p>Paste an HTTPS image URL from your approved storage bucket.</p><input value={galleryUrl} onChange={(e) => setGalleryUrl(e.target.value)} placeholder="https://..." /><button className="button button--dark" onClick={addAsset}>Add to library</button></div><div className="media-grid">{galleryAssets.map((item, index) => <div key={`${item}-${index}`}><img src={item} alt="" /><button onClick={() => { const updated = galleryAssets.filter((_, current) => current !== index); setGalleryAssets(updated); localStorage.setItem("olkinyei-gallery-admin", JSON.stringify(updated)); }} aria-label="Remove media asset"><X /></button></div>)}</div></div>}
-    {tab === "Operations" && <div className="operations"><section><h2>Guides</h2><p><strong>Daniel Ole Nkoitoi</strong><span>Senior guide / Mara</span><em>In field</em></p><p><strong>Neema Lema</strong><span>Photographic guide / Serengeti</span><em>Available</em></p><p><strong>Joseph Mollel</strong><span>Walking guide / Tarangire</span><em>In field</em></p></section><section><h2>Vehicles</h2><p><strong>OLK-04</strong><span>Land Cruiser / Arusha</span><em>Ready</em></p><p><strong>OLK-07</strong><span>Photo vehicle / Mara</span><em>Service due</em></p><p><strong>OLK-09</strong><span>Land Cruiser / Nairobi</span><em>Ready</em></p></section><section><h2>Availability</h2><p><strong>Migration season</strong><span>July to September</span><em>Limited</em></p><p><strong>Green season</strong><span>January to March</span><em>Open</em></p></section><section><h2>Invoices</h2><p><strong>Automated draft invoices</strong><span>Generated after confirmation</span><em>{bookings.filter((item) => item.status === "Confirmed").length} pending</em></p></section></div>}
-    </main></div>}
-  </motion.div>;
 }
 
 /**
@@ -1117,11 +1060,10 @@ function PublicApp() {
   const [loading, setLoading] = useState(() => {
     try { return !sessionStorage.getItem("olkinyei-intro"); } catch { return true; }
   });
-  const [selectedSafari, setSelectedSafari] = useState<Safari | null>(null);
-  const [bookingSafari, setBookingSafari] = useState<Safari | null>(null);
-  const [adminOpen, setAdminOpen] = useState(false);
+  const [selectedSafari, setSelectedSafari] = useState<SafariPackage | null>(null);
+  const [bookingSafari, setBookingSafari] = useState<SafariPackage | null>(null);
   const [bookings, setBookings] = useState<Booking[]>(() => readStorage("olkinyei-bookings", []));
-  const [content, setContent] = useState<EditableContent>(() => readStorage("olkinyei-content", defaultContent));
+  const [content] = useState<EditableContent>(() => readStorage("olkinyei-content", defaultContent));
   const cmsHomePage = useCmsStore((state) => state.pages.find((item) => item.route === "/"));
   const cmsSettings = useCmsStore((state) => state.siteSettings);
   const publicContent: EditableContent = {
@@ -1144,9 +1086,8 @@ function PublicApp() {
     setPostSlug(null);
     window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
-  const bookSafari = (safari: Safari) => { setSelectedSafari(null); setBookingSafari(safari); navigate("contact"); };
+  const bookSafari = (safari: SafariPackage) => { setSelectedSafari(null); setBookingSafari(safari); navigate("contact"); };
   const completeLoader = useCallback(() => { try { sessionStorage.setItem("olkinyei-intro", "true"); } catch { /* Browsing can continue when storage is blocked. */ } setLoading(false); }, []);
-  const saveContent = (updated: EditableContent) => { setContent(updated); localStorage.setItem("olkinyei-content", JSON.stringify(updated)); };
   useEffect(() => {
     const pop = () => {
       setPage(pageFromPath(window.location.pathname));
@@ -1229,7 +1170,7 @@ function PublicApp() {
     }
     return <ContactPage initialSafari={bookingSafari} bookings={bookings} content={publicContent} onStored={(booking) => setBookings((current) => current.some((item) => item.reference === booking.reference) ? current : [booking, ...current])} />;
   }, [page, postSlug, navigate, openPost, closePost, publicContent.homeStatement, publicContent.conservationStatement, publicContent.contactEmail, bookingSafari, bookings]);
-  return <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><CustomCursor /><AnimatePresence>{loading && <Loader onComplete={completeLoader} />}</AnimatePresence>{!loading && <Header page={page} navigate={navigate} />}<AnimatePresence mode="wait">{!loading && <motion.main id="main-content" key={postSlug ? `journal-${postSlug}` : page} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>{pageContent}<Footer navigate={navigate} /></motion.main>}</AnimatePresence><AnimatePresence>{selectedSafari && <ExperienceModal safari={selectedSafari} onClose={() => setSelectedSafari(null)} onBook={bookSafari} />}</AnimatePresence><AnimatePresence>{adminOpen && <AdminPanel bookings={bookings} onClose={() => setAdminOpen(false)} onBookings={setBookings} content={content} onContent={saveContent} />}</AnimatePresence></div>;
+  return <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><CustomCursor /><AnimatePresence>{loading && <Loader onComplete={completeLoader} />}</AnimatePresence>{!loading && <Header page={page} navigate={navigate} />}<AnimatePresence mode="wait">{!loading && <motion.main id="main-content" key={postSlug ? `journal-${postSlug}` : page} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>{pageContent}<Footer navigate={navigate} /></motion.main>}</AnimatePresence><AnimatePresence>{selectedSafari && <ExperienceModal safari={selectedSafari} onClose={() => setSelectedSafari(null)} onBook={bookSafari} />}</AnimatePresence></div>;
 }
 
 function isAdminRoute() {

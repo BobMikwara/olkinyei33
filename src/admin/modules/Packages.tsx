@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Edit3, Copy, Archive, Search, Package } from "lucide-react";
+import { Plus, Edit3, Copy, Archive, Search, Package, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { store, useStore } from "../store";
 import { Button, Card, Input, Textarea, Select, Badge, Modal, ConfirmDialog, PageHeader, EmptyState, Tabs } from "../ui";
 import type { SafariPackage } from "../types";
@@ -50,6 +50,58 @@ function PackageCard({ pkg, onEdit, onDuplicate, onDelete, onTogglePublish }: {
   );
 }
 
+/**
+ * CMS-editable list of strings (used for a package's Included / Not Included
+ * sections). Supports add, inline edit, delete and reorder with no fixed item
+ * limit. Empty entries are dropped when the package is saved.
+ */
+function StringListEditor({ title, items, onChange, placeholder }: {
+  title: string;
+  items: string[];
+  onChange: (items: string[]) => void;
+  placeholder?: string;
+}) {
+  const update = (index: number, value: string) => {
+    const next = items.slice();
+    next[index] = value;
+    onChange(next);
+  };
+  const move = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= items.length) return;
+    const next = items.slice();
+    [next[index], next[target]] = [next[target], next[index]];
+    onChange(next);
+  };
+  const remove = (index: number) => onChange(items.filter((_, i) => i !== index));
+  const add = () => onChange([...items, ""]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--admin-fg-muted)]">{title}</span>
+        <Button size="sm" variant="secondary" icon={Plus} onClick={add}>Add item</Button>
+      </div>
+      {items.length === 0 ? (
+        <p className="rounded-md border border-dashed border-[var(--admin-border)] px-3 py-5 text-center text-[12px] text-[var(--admin-fg-muted)]">No items yet. Add the first one.</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item, index) => (
+            <div key={index} className="flex items-center gap-2">
+              <Input value={item} maxLength={160} onChange={(e) => update(index, e.target.value)} placeholder={placeholder} />
+              <div className="flex shrink-0 gap-1">
+                <Button size="icon" variant="ghost" aria-label={`Move ${title.toLowerCase()} item up`} disabled={index === 0} onClick={() => move(index, -1)}><ChevronUp size={13} /></Button>
+                <Button size="icon" variant="ghost" aria-label={`Move ${title.toLowerCase()} item down`} disabled={index === items.length - 1} onClick={() => move(index, 1)}><ChevronDown size={13} /></Button>
+                <Button size="icon" variant="ghost" aria-label={`Remove ${title.toLowerCase()} item`} onClick={() => remove(index)}><Trash2 size={13} /></Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PackageEditor({ pkg, onClose }: { pkg: SafariPackage | null; onClose: () => void }) {
   const [form, setForm] = useState<Partial<SafariPackage>>(pkg ?? {
     title: "",
@@ -84,10 +136,17 @@ function PackageEditor({ pkg, onClose }: { pkg: SafariPackage | null; onClose: (
       store.notify({ type: "error", title: "Missing required fields", message: "Title and region are required." });
       return;
     }
+    // Drop empty / whitespace-only list items so the database never stores
+    // blank Included or Not Included entries.
+    const sanitized = {
+      ...form,
+      included: (form.included ?? []).map((item) => item.trim()).filter((item) => item.length > 0),
+      excluded: (form.excluded ?? []).map((item) => item.trim()).filter((item) => item.length > 0),
+    };
     if (pkg) {
-      store.actions.updatePackage(pkg.id, form);
+      store.actions.updatePackage(pkg.id, sanitized);
     } else {
-      store.actions.createPackage(form as Omit<SafariPackage, "id" | "createdAt" | "updatedAt" | "slug">);
+      store.actions.createPackage(sanitized as Omit<SafariPackage, "id" | "createdAt" | "updatedAt" | "slug">);
     }
     onClose();
   };
@@ -114,6 +173,14 @@ function PackageEditor({ pkg, onClose }: { pkg: SafariPackage | null; onClose: (
         <label className="block"><span className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-[var(--admin-fg-muted)]">Summary</span><Textarea rows={3} value={form.summary} onChange={(e) => update("summary", e.target.value)} placeholder="Brief description for cards and listings..." /></label>
 
         <label className="block"><span className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-[var(--admin-fg-muted)]">Full Description</span><Textarea rows={6} value={form.description} onChange={(e) => update("description", e.target.value)} placeholder="Detailed description..." /></label>
+
+        <div className="border-t border-[var(--admin-border)] pt-6">
+          <h3 className="mb-4 font-serif text-xl font-light">Included &amp; Not included</h3>
+          <div className="space-y-6">
+            <StringListEditor title="Included" items={form.included ?? []} onChange={(items) => update("included", items)} placeholder="Enter an included item" />
+            <StringListEditor title="Not included" items={form.excluded ?? []} onChange={(items) => update("excluded", items)} placeholder="Enter an item not included" />
+          </div>
+        </div>
 
         <div className="border-t border-[var(--admin-border)] pt-6">
           <h3 className="mb-4 font-serif text-xl font-light">Publishing</h3>

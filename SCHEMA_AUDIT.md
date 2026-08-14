@@ -135,9 +135,10 @@ row model. No code references a non-existent column.
 1. supabase/schema.sql
 2. supabase/auth_schema_sync.sql
 3. supabase/role_canonicalization.sql   ← new, required
-4. supabase/blog_posts_sync.sql
-5. supabase/bookings_hardening.sql
-6. supabase/cms_content.sql
+4. supabase/packages_sync.sql           ← Safari Packages schema + RLS + seed
+5. supabase/blog_posts_sync.sql
+6. supabase/bookings_hardening.sql
+7. supabase/cms_content.sql
 ```
 
 Verification query — must return zero rows:

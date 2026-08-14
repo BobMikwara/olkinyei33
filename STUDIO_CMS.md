@@ -24,7 +24,8 @@ Run in order inside the Supabase SQL editor:
 
 1. `supabase/schema.sql` — content tables + baseline RLS
 2. `supabase/production_auth.sql` — hardened profiles, audit logs, root triggers
-3. `supabase/cms_tokens.sql` — offline-mode setup tokens (optional fallback tables)
+3. `supabase/packages_sync.sql` — Safari Packages (`public.packages`) canonical schema, RLS, and seed data (the single source of truth shared by the CMS and the public website)
+4. `supabase/cms_tokens.sql` — offline-mode setup tokens (optional fallback tables)
 
 `production_auth.sql` grants no client insert/update/delete on `profiles`, adds `audit_logs`, and installs triggers that make the Root Super Admin immutable from the client.
 
