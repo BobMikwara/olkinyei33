@@ -6,9 +6,10 @@ import { useCallback, useRef, useSyncExternalStore } from "react";
 import type {
   AdminUser, ActivityEntry, Action, AuditEntry, Booking, BlogPost, Customer, Destination, Guide,
   MediaAsset, ModuleKey, Notification,
-  PageSettings, PermissionSet, Role, SafariPackage, Session,
+  PageSettings, PermissionSet, Role, SafariPackage, SafariPackageImage, Session,
   SiteSettings, Testimonial, TestimonialStatus, Theme, Vehicle,
 } from "./types";
+import { normalizePageSlug, validatePageSlug } from "./pages";
 import { cloudUnavailableReason, supabase } from "../lib/supabase";
 import { LEGACY_ROLE_ALIASES, TABLES } from "./constants";
 import {
@@ -54,21 +55,9 @@ const seedBookings: Booking[] = [
   { id: "b8", reference: "OLK-2026-WR1C5", createdAt: "2026-05-05T08:30:00Z", status: "New", safariId: "under-canvas", safari: "Under Canvas", startDate: "2026-09-04", endDate: "2026-09-09", adults: 2, children: 0, accommodation: "Intimate camps under canvas", pickup: "Ang'ata Migration Camp", airport: "Kilimanjaro International Airport (JRO)", budget: "$5,000 - $8,000 per person", requests: "Wildlife documentary team. Small crew of two with minimal footprint.", payment: "Secure card payment", name: "Elena Rossi", email: "e.rossi@wildlens.it", phone: "+39 338 765 4321", paymentStatus: "Pending", customerId: "c6" },
 ];
 
-// Offline/demo placeholder records only. Supabase `public.packages` is the
-// single source of truth; `loadCloudPackages()` replaces these entirely when
-// the backend is connected. `included` / `excluded` are intentionally empty
-// here — those lists are CMS content and must never be hardcoded in the
-// frontend (they live in the `included` / `excluded` jsonb columns).
-const seedPackages: SafariPackage[] = [
-  { id: "p1", slug: "great-migration", title: "The Great Migration", region: "Serengeti + Maasai Mara", duration: "9 days / 8 nights", nights: 8, price: 8450, image: "https://images.pexels.com/photos/5521703/pexels-photo-5521703.jpeg?auto=compress&cs=tinysrgb&w=1600", gallery: ["https://images.pexels.com/photos/5521703/pexels-photo-5521703.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/15815060/pexels-photo-15815060.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/15373901/pexels-photo-15373901.jpeg?auto=compress&cs=tinysrgb&w=1600"], summary: "Follow the herds from private mobile camps to the fabled Mara River crossings.", description: "A nine-day expedition tracking two million animals across the Serengeti-Mara ecosystem. We position private mobile camps along the migration route, moving with the herds as they respond to rain and river crossings.", signature: "River crossings, predator country, private mobile camp", highlights: ["Mara River crossings", "Private mobile camp", "Predator tracking", "Balloon safari option"], included: [], excluded: [], availability: ["Jun", "Jul", "Aug", "Sep", "Oct"], country: ["Tanzania", "Kenya"], parks: ["Serengeti", "Maasai Mara", "Ngorongoro"], wildlife: ["Wildebeest", "Zebra", "Lion", "Cheetah", "Crocodile"], difficulty: "Moderate", tags: ["migration", "big-five", "signature"], featured: true, published: true, seo: { title: "The Great Migration Safari | Olkinyei Expeditions", description: "A nine-day private expedition following two million animals across the Serengeti and Maasai Mara." }, coordinates: [35, 42], createdAt: "2024-03-12T00:00:00Z", updatedAt: "2026-05-01T10:00:00Z" },
-  { id: "p2", slug: "big-five", title: "Big Five, Unhurried", region: "Ngorongoro + Serengeti", duration: "7 days / 6 nights", nights: 6, price: 6200, image: "https://images.pexels.com/photos/19281386/pexels-photo-19281386.jpeg?auto=compress&cs=tinysrgb&w=1600", gallery: ["https://images.pexels.com/photos/19281386/pexels-photo-19281386.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/26052069/pexels-photo-26052069.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/30817409/pexels-photo-30817409.jpeg?auto=compress&cs=tinysrgb&w=1600"], summary: "A patient, private search for East Africa's icons, led by the rhythms of the wild.", description: "Seven days dedicated to the patient observation of Africa's most iconic species across the Ngorongoro Crater and central Serengeti.", signature: "Crater floor, lion territories, elephant herds", highlights: ["Ngorongoro Crater floor", "Black rhino tracking", "Elephant herds", "Lion prides"], included: [], excluded: [], availability: ["Jan", "Feb", "Jun", "Jul", "Aug", "Sep"], country: ["Tanzania"], parks: ["Ngorongoro", "Serengeti", "Tarangire"], wildlife: ["Lion", "Leopard", "Elephant", "Buffalo", "Rhino"], difficulty: "Gentle", tags: ["big-five", "first-time"], featured: false, published: true, seo: { title: "Big Five Safari | Ngorongoro & Serengeti", description: "A patient seven-day search for the Big Five across the Ngorongoro Crater and Serengeti." }, coordinates: [42, 57], createdAt: "2024-03-12T00:00:00Z", updatedAt: "2026-04-22T15:30:00Z" },
-  { id: "p3", slug: "luxury-lodge", title: "Lodges Beyond the Wild", region: "Northern Tanzania", duration: "8 days / 7 nights", nights: 7, price: 9900, image: "https://images.pexels.com/photos/37790193/pexels-photo-37790193.jpeg?auto=compress&cs=tinysrgb&w=1600", gallery: ["https://images.pexels.com/photos/37790193/pexels-photo-37790193.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/32382771/pexels-photo-32382771.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/7211289/pexels-photo-7211289.jpeg?auto=compress&cs=tinysrgb&w=1600"], summary: "Architectural lodges, intuitive service and vast landscapes with every detail considered.", description: "Eight nights in some of East Africa's most considered architectural lodges, where design meets the wild.", signature: "Design lodges, bush dining, optional helicopter flight", highlights: ["Architectural lodges", "Private guides", "Bush dining", "Helicopter transfers"], included: [], excluded: [], availability: ["All year"], country: ["Tanzania"], parks: ["Serengeti", "Ngorongoro", "Tarangire", "Lake Manyara"], wildlife: ["Lion", "Elephant", "Giraffe", "Leopard"], difficulty: "Gentle", tags: ["luxury", "design", "lodge"], featured: false, published: true, seo: { title: "Luxury Lodge Safari | Tanzania", description: "Eight nights in East Africa's most considered architectural lodges." }, coordinates: [56, 52], createdAt: "2024-03-12T00:00:00Z", updatedAt: "2026-03-18T09:00:00Z" },
-  { id: "p4", slug: "family", title: "The Family Bush", region: "Laikipia + Maasai Mara", duration: "8 days / 7 nights", nights: 7, price: 5750, image: "https://images.pexels.com/photos/30817409/pexels-photo-30817409.jpeg?auto=compress&cs=tinysrgb&w=1600", gallery: ["https://images.pexels.com/photos/30817409/pexels-photo-30817409.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/7211289/pexels-photo-7211289.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/15373901/pexels-photo-15373901.jpeg?auto=compress&cs=tinysrgb&w=1600"], summary: "A flexible, deeply engaging journey designed for curious young explorers and their families.", description: "An eight-day family expedition balancing wildlife excitement with genuine rest, built around child-friendly pacing and activities.", signature: "Junior ranger program, private house, gentle pacing", highlights: ["Junior ranger program", "Private family vehicle", "Child-friendly camps", "Cultural encounters"], included: [], excluded: [], availability: ["Feb", "Mar", "Jun", "Jul", "Aug", "Dec"], country: ["Kenya", "Tanzania"], parks: ["Maasai Mara", "Laikipia", "Amboseli"], wildlife: ["Elephant", "Giraffe", "Lion", "Zebra"], difficulty: "Gentle", tags: ["family", "kids", "flexible"], featured: false, published: true, seo: { title: "Family Safari | Kenya & Tanzania", description: "A family-friendly safari balancing wildlife excitement with genuine rest." }, coordinates: [62, 32], createdAt: "2024-04-15T00:00:00Z", updatedAt: "2026-04-10T14:20:00Z" },
-  { id: "p5", slug: "honeymoon", title: "Wildly, Together", region: "Serengeti + Zanzibar", duration: "11 days / 10 nights", nights: 10, price: 11200, image: "https://images.pexels.com/photos/7211289/pexels-photo-7211289.jpeg?auto=compress&cs=tinysrgb&w=1600", gallery: ["https://images.pexels.com/photos/7211289/pexels-photo-7211289.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/37790193/pexels-photo-37790193.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/15815060/pexels-photo-15815060.jpeg?auto=compress&cs=tinysrgb&w=1600"], summary: "Private plains, lantern dinners and an Indian Ocean epilogue created for two.", description: "An eleven-day romantic journey combining the wild drama of the Serengeti with an Indian Ocean island epilogue.", signature: "Private plunge pool, hot-air balloon, island retreat", highlights: ["Hot-air balloon", "Private dinners", "Ocean retreat", "Couples spa"], included: [], excluded: [], availability: ["Jan", "Feb", "Jun", "Jul", "Aug", "Sep", "Oct"], country: ["Tanzania"], parks: ["Serengeti", "Ngorongoro"], wildlife: ["Lion", "Elephant", "Giraffe"], difficulty: "Gentle", tags: ["honeymoon", "romantic", "island"], featured: false, published: true, seo: { title: "Honeymoon Safari | Serengeti & Zanzibar", description: "An eleven-day romantic journey combining Serengeti wildlife with an Indian Ocean retreat." }, coordinates: [46, 67], createdAt: "2024-05-20T00:00:00Z", updatedAt: "2026-02-28T11:00:00Z" },
-  { id: "p6", slug: "photographic", title: "The Photographer's Light", region: "Ndutu + Serengeti", duration: "10 days / 9 nights", nights: 9, price: 9300, image: "https://images.pexels.com/photos/32414164/pexels-photo-32414164.jpeg?auto=compress&cs=tinysrgb&w=1600", gallery: ["https://images.pexels.com/photos/32414164/pexels-photo-32414164.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/19281386/pexels-photo-19281386.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/5521703/pexels-photo-5521703.jpeg?auto=compress&cs=tinysrgb&w=1600"], summary: "A specialist-led expedition with low-angle vehicles and time to wait for the frame.", description: "Ten days in the field with a specialist photographic guide, built around light, patience, and the frame.", signature: "Pro guide, beanbags, editing suite, golden-hour drives", highlights: ["Professional guide", "Photography vehicle", "Editing suite", "Golden-hour drives"], included: [], excluded: [], availability: ["Jan", "Feb", "Mar", "Jun", "Sep", "Oct"], country: ["Tanzania"], parks: ["Ndutu", "Serengeti"], wildlife: ["Cheetah", "Lion", "Leopard", "Wildebeest"], difficulty: "Moderate", tags: ["photography", "specialist"], featured: false, published: true, seo: { title: "Photographic Safari | Tanzania", description: "A specialist photographic expedition with dedicated vehicles and golden-hour drives." }, coordinates: [39, 59], createdAt: "2024-06-08T00:00:00Z", updatedAt: "2026-03-05T16:45:00Z" },
-  { id: "p7", slug: "walking", title: "On Foot in the Rift", region: "Tarangire + Lake Eyasi", duration: "6 days / 5 nights", nights: 5, price: 4800, image: "https://images.pexels.com/photos/32382771/pexels-photo-32382771.jpeg?auto=compress&cs=tinysrgb&w=1600", gallery: ["https://images.pexels.com/photos/32382771/pexels-photo-32382771.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/30817409/pexels-photo-30817409.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/38223514/pexels-photo-38223514.jpeg?auto=compress&cs=tinysrgb&w=1600"], summary: "Read tracks, notice the small worlds and move through the landscape at nature's pace.", description: "Six days on foot through Tarangire and the Lake Eyasi basin, reading tracks and moving through the landscape at nature's pace.", signature: "Private walking guide, fly camp, Hadzabe encounter", highlights: ["Private walking guide", "Fly camping", "Hadzabe encounter", "Birdlife"], included: [], excluded: [], availability: ["Jun", "Jul", "Aug", "Sep", "Oct"], country: ["Tanzania"], parks: ["Tarangire", "Lake Eyasi"], wildlife: ["Elephant", "Baobab", "Birdlife"], difficulty: "Active", tags: ["walking", "on-foot", "off-grid"], featured: false, published: true, seo: { title: "Walking Safari | Tarangire & Lake Eyasi", description: "A six-day walking safari through Tarangire and Lake Eyasi." }, coordinates: [52, 62], createdAt: "2024-07-01T00:00:00Z", updatedAt: "2026-02-10T09:00:00Z" },
-  { id: "p8", slug: "under-canvas", title: "Under Canvas", region: "Maasai Mara Conservancies", duration: "5 days / 4 nights", nights: 4, price: 3950, image: "https://images.pexels.com/photos/15373901/pexels-photo-15373901.jpeg?auto=compress&cs=tinysrgb&w=1600", gallery: ["https://images.pexels.com/photos/15373901/pexels-photo-15373901.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/5521703/pexels-photo-5521703.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/19281386/pexels-photo-19281386.jpeg?auto=compress&cs=tinysrgb&w=1600"], summary: "Canvas walls, hot bucket showers and the rare luxury of falling asleep to the wild.", description: "Five nights under canvas in the Maasai Mara conservancies, with night drives and fireside suppers.", signature: "Private conservancy, night drives, fireside suppers", highlights: ["Private conservancy", "Night drives", "Fireside suppers"], included: [], excluded: [], availability: ["Jun", "Jul", "Aug", "Sep", "Oct", "Nov"], country: ["Kenya"], parks: ["Maasai Mara"], wildlife: ["Lion", "Leopard", "Cheetah"], difficulty: "Moderate", tags: ["camping", "under-canvas"], featured: false, published: true, seo: { title: "Under Canvas Safari | Maasai Mara", description: "Five nights under canvas in the Maasai Mara conservancies." }, coordinates: [30, 34], createdAt: "2024-07-12T00:00:00Z", updatedAt: "2026-01-28T11:00:00Z" },
-];
+// Safari package content is never seeded in the browser. The database seed in
+// supabase/packages_sync.sql and subsequent CMS edits are the only source.
+const seedPackages: SafariPackage[] = [];
 
 const seedDestinations: Destination[] = [
   { id: "d1", slug: "serengeti", name: "Serengeti", country: "Tanzania", coordinates: [45, 56], bestTime: "June to October", animal: "Wildebeest", image: "https://images.pexels.com/photos/15815060/pexels-photo-15815060.jpeg?auto=compress&cs=tinysrgb&w=1600", gallery: ["https://images.pexels.com/photos/15815060/pexels-photo-15815060.jpeg?auto=compress&cs=tinysrgb&w=1600", "https://images.pexels.com/photos/5521703/pexels-photo-5521703.jpeg?auto=compress&cs=tinysrgb&w=1600"], description: "An immense grassland theatre where weather, predator and prey write each day anew.", longDescription: "The Serengeti is a living stage where two million wildebeest, zebra and gazelle follow the rains in an ancient rhythm that has continued for millennia.", activities: ["Game drives", "Balloon safari", "Walking safari", "Night drives"], featured: true, published: true, seo: { title: "Serengeti National Park | Tanzania", description: "The endless plains of the Serengeti, home to the Great Migration." }, createdAt: "2024-03-12T00:00:00Z", updatedAt: "2026-04-18T10:00:00Z" },
@@ -122,14 +111,9 @@ const seedCustomers: Customer[] = [
   { id: "c6", name: "Elena Rossi", email: "e.rossi@wildlens.it", phone: "+39 338 765 4321", country: "Italy", avatar: "https://images.pexels.com/photos/1130626/pexels-photo-1130626.jpeg?auto=compress&cs=tinysrgb&w=200", totalBookings: 1, totalSpent: 7900, lifetimeValue: "Silver", firstTrip: "2026-09-04", lastTrip: "2026-09-04", notes: "Wildlife documentary team. Minimal footprint requirement.", wishlist: ["Okavango", "South Luangwa"], tags: ["documentary", "minimal-footprint"], createdAt: "2026-03-12T00:00:00Z" },
 ];
 
-const seedPages: PageSettings[] = [
-  { id: "pg1", route: "/", title: "Home", heroTitle: "East Africa, unhurried.", heroEyebrow: "Private journeys across Kenya and Tanzania", heroText: "Private safaris shaped by the migration, not the clock.", heroImage: "https://images.pexels.com/photos/15815060/pexels-photo-15815060.jpeg?auto=compress&cs=tinysrgb&w=1600", content: { homeStatement: "There is a moment when the plains stop being scenery and become something felt. We design every journey around that moment.", conservationStatement: "Every expedition contributes directly to land leases, guide education and community-led conservation in the places we travel." }, published: true, seo: { title: "Olkinyei Expeditions | Private Luxury Safaris", description: "Private, conservation-led luxury safaris across Kenya and Tanzania.", keywords: ["safari", "kenya", "tanzania", "luxury", "migration"] }, updatedAt: "2026-05-10T08:00:00Z", updatedBy: "u1" },
-  { id: "pg2", route: "/about", title: "Our Story", heroTitle: "Born here. Still led by wonder.", heroEyebrow: "OUR STORY", heroText: "An independent East African company creating private journeys with deep local knowledge and a light footprint.", heroImage: "https://images.pexels.com/photos/38223514/pexels-photo-38223514.jpeg?auto=compress&cs=tinysrgb&w=1600", content: {}, published: true, seo: { title: "Our Story | Olkinyei Expeditions", description: "The story of Olkinyei Expeditions.", keywords: [] }, updatedAt: "2026-04-22T10:30:00Z", updatedBy: "u3" },
-  { id: "pg3", route: "/safari-experiences", title: "Safari Experiences", heroTitle: "Journeys measured in moments.", heroEyebrow: "PRIVATE SAFARIS", heroText: "Eight signature routes, each privately guided and shaped around your pace.", heroImage: "https://images.pexels.com/photos/32414164/pexels-photo-32414164.jpeg?auto=compress&cs=tinysrgb&w=1600", content: {}, published: true, seo: { title: "Private Safari Experiences | Olkinyei", description: "Eight signature safari routes.", keywords: [] }, updatedAt: "2026-05-01T14:20:00Z", updatedBy: "u3" },
-  { id: "pg4", route: "/destinations", title: "Destinations", heroTitle: "The map is only the beginning.", heroEyebrow: "KENYA + TANZANIA", heroText: "From volcanic highlands to endless grassland, explore the places that shape our journeys.", heroImage: "https://images.pexels.com/photos/15373901/pexels-photo-15373901.jpeg?auto=compress&cs=tinysrgb&w=1600", content: {}, published: true, seo: { title: "Kenya & Tanzania Destinations | Olkinyei", description: "Destinations across Kenya and Tanzania.", keywords: [] }, updatedAt: "2026-03-18T09:45:00Z", updatedBy: "u3" },
-  { id: "pg5", route: "/gallery", title: "Field Notes", heroTitle: "What the wild allowed us to see.", heroEyebrow: "FIELD NOTES", heroText: "A living archive of quiet encounters, open horizons and the people who know them.", heroImage: "https://images.pexels.com/photos/7211289/pexels-photo-7211289.jpeg?auto=compress&cs=tinysrgb&w=1600", content: {}, published: true, seo: { title: "Field Notes and Gallery | Olkinyei", description: "Field notes and photography from East Africa.", keywords: [] }, updatedAt: "2026-04-05T11:10:00Z", updatedBy: "u3" },
-  { id: "pg6", route: "/contact", title: "Contact & Booking", heroTitle: "Your safari starts with a conversation.", heroEyebrow: "PRIVATE JOURNEY DESIGN", heroText: "Share a few details. One dedicated designer will shape a thoughtful first proposal within one business day.", heroImage: "https://images.pexels.com/photos/37790193/pexels-photo-37790193.jpeg?auto=compress&cs=tinysrgb&w=1600", content: {}, published: true, seo: { title: "Plan Your Safari | Olkinyei", description: "Plan your private safari with Olkinyei.", keywords: [] }, updatedAt: "2026-02-14T08:30:00Z", updatedBy: "u1" },
-];
+// Page records are loaded only from public.pages. Initial records live in
+// supabase/pages_sync.sql, never in the frontend bundle.
+const seedPages: PageSettings[] = [];
 
 const seedSiteSettings: SiteSettings = {
   brandName: "Olkinyei Expeditions",
@@ -209,7 +193,8 @@ function loadState(): StoreState {
         users: saved.users ?? seedUsers,
         bookings: saved.bookings ?? seedBookings,
         newBookingsCount: saved.newBookingsCount ?? 0,
-        packages: saved.packages ?? seedPackages,
+        // Never revive content rows from localStorage. Supabase owns them.
+        packages: seedPackages,
         destinations: saved.destinations ?? seedDestinations,
         media: saved.media ?? seedMedia,
         blogPosts: saved.blogPosts ?? seedBlogPosts,
@@ -217,7 +202,7 @@ function loadState(): StoreState {
         guides: saved.guides ?? seedGuides,
         vehicles: saved.vehicles ?? seedVehicles,
         customers: saved.customers ?? seedCustomers,
-        pages: saved.pages ?? seedPages,
+        pages: seedPages,
         siteSettings: { ...seedSiteSettings, ...(saved.siteSettings ?? {}) },
         activity: saved.activity ?? seedActivity,
         audit: saved.audit ?? [],
@@ -387,7 +372,10 @@ function subscribeToBookingsAuthenticated(onRow: (booking: import("../data").Boo
 window.addEventListener("storage", (event) => {
   if (event.key === STORAGE_KEY && event.newValue) {
     try {
-      state = JSON.parse(event.newValue) as StoreState;
+      const incoming = JSON.parse(event.newValue) as StoreState;
+      // Cross-tab local state may update UI preferences and operational demo
+      // data, but it can never replace Supabase-owned page/package records.
+      state = { ...incoming, pages: state.pages, packages: state.packages };
       listeners.forEach((listener) => listener());
     } catch { /* Ignore invalid external state. */ }
     return;
@@ -400,8 +388,11 @@ window.addEventListener("storage", (event) => {
 });
 
 function persist() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-  catch { /* ignore quota errors */ }
+  try {
+    // Do not create a browser copy of CMS-owned page/package content. Realtime
+    // and fresh SELECTs synchronize those rows across tabs and devices.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, pages: [], packages: [] }));
+  } catch { /* ignore quota errors */ }
 }
 
 function emit() {
@@ -409,9 +400,9 @@ function emit() {
   listeners.forEach((listener) => listener());
 }
 
-// ============ Cloud content sync (Supabase cms_content) ============
-// Brand, page, and site settings live in the database so changes publish to
-// every device in real time. localStorage remains an offline cache only.
+// ============ Cloud site settings (public.cms_content) ============
+// cms_content owns only the global site_settings document. Pages are normalized
+// rows in public.pages and have a separate CRUD/realtime path below.
 
 let cmsContentBootstrapped = false;
 
@@ -423,43 +414,146 @@ function applyCloudSiteSettings(content: unknown) {
   emit();
 }
 
-function applyCloudPages(content: unknown) {
-  if (!Array.isArray(content) || content.length === 0) return;
-  state = { ...state, pages: content as PageSettings[] };
-  emit();
-}
-
 async function loadCloudCmsContent(): Promise<void> {
   if (!supabase || cmsContentBootstrapped) return;
   cmsContentBootstrapped = true;
   try {
-    // First, maybe seed the cloud once from local defaults so the first user
-    // migration doesn't discard anything.
-    const { data } = await supabase.from(TABLES.cmsContent).select("id, content");
-    const rows = (data ?? []) as { id: string; content: unknown }[];
-    for (const row of rows) {
-      if (row.id === "site_settings") applyCloudSiteSettings(row.content);
-      if (row.id === "pages") applyCloudPages(row.content);
-    }
-    if (import.meta.env.DEV) console.debug("[Olkinyei] CMS content synced from Supabase");
+    const { data, error } = await supabase
+      .from(TABLES.cmsContent)
+      .select("id, content")
+      .eq("id", "site_settings")
+      .maybeSingle();
+    if (error) throw error;
+    if (data?.content) applyCloudSiteSettings(data.content);
+    if (import.meta.env.DEV) console.debug("[Olkinyei] Site settings synced from Supabase");
   } catch {
-    cmsContentBootstrapped = false; // allow retry on next focus/save
+    cmsContentBootstrapped = false;
   }
 }
 
 let cloudSaveQueue: Promise<void> = Promise.resolve();
 
-async function cloudSaveDocument(id: "site_settings" | "pages", content: unknown): Promise<void> {
+async function cloudSaveSiteSettings(content: SiteSettings): Promise<void> {
   const client = supabase;
   if (!client) { cmsContentBootstrapped = false; return; }
   cloudSaveQueue = cloudSaveQueue.then(async () => {
-    try {
-      await client.from(TABLES.cmsContent).upsert({ id, content, updated_at: new Date().toISOString() });
-    } catch (error) {
-      if (import.meta.env.DEV) console.warn("[Olkinyei] cloud save failed for", id, error);
+    const { error } = await client
+      .from(TABLES.cmsContent)
+      .upsert({ id: "site_settings", content, updated_at: new Date().toISOString() });
+    if (error) {
+      notify({ type: "error", title: "Settings were not saved", message: error.message });
+      throw error;
     }
-  });
+  }).catch(() => undefined);
   return cloudSaveQueue;
+}
+
+// ============ CMS pages (public.pages) ============
+
+type DbPageRow = {
+  id: string;
+  slug: string;
+  title: string;
+  content: Record<string, unknown> | null;
+  featured_image: string | null;
+  hero_title: string | null;
+  hero_eyebrow: string | null;
+  hero_description: string | null;
+  status: PageSettings["status"];
+  layout: PageSettings["layout"];
+  navigation_label: string | null;
+  show_in_navigation: boolean | null;
+  sort_order: number | null;
+  seo_title: string | null;
+  seo_description: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function pageFromRow(row: DbPageRow): PageSettings {
+  const rawContent = row.content && typeof row.content === "object" && !Array.isArray(row.content)
+    ? row.content
+    : {};
+  return {
+    id: row.id,
+    slug: row.slug,
+    title: row.title,
+    content: { ...rawContent, body: String(rawContent.body ?? "") },
+    featuredImage: row.featured_image ?? "",
+    heroTitle: row.hero_title ?? "",
+    heroEyebrow: row.hero_eyebrow ?? "",
+    heroText: row.hero_description ?? "",
+    status: row.status,
+    layout: row.layout ?? "standard",
+    navigationLabel: row.navigation_label ?? row.title,
+    showInNavigation: Boolean(row.show_in_navigation),
+    sortOrder: row.sort_order ?? 0,
+    seo: { title: row.seo_title ?? "", description: row.seo_description ?? "" },
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    updatedBy: row.updated_by ?? undefined,
+  };
+}
+
+function pageToRow(page: PageSettings): Record<string, unknown> {
+  return {
+    id: page.id,
+    slug: normalizePageSlug(page.slug),
+    title: page.title.trim(),
+    content: { ...page.content, body: String(page.content.body ?? "") },
+    featured_image: page.featuredImage,
+    hero_title: page.heroTitle,
+    hero_eyebrow: page.heroEyebrow,
+    hero_description: page.heroText,
+    status: page.status,
+    layout: page.layout,
+    navigation_label: page.navigationLabel.trim() || page.title.trim(),
+    show_in_navigation: page.showInNavigation,
+    sort_order: page.sortOrder,
+    seo_title: page.seo.title,
+    seo_description: page.seo.description,
+    updated_by: currentUser()?.id ?? null,
+  };
+}
+
+let pagesBootstrapped = false;
+
+async function loadCloudPages(): Promise<void> {
+  const client = supabase;
+  if (!client || pagesBootstrapped) return;
+  pagesBootstrapped = true;
+  try {
+    const { data, error } = await client.from(TABLES.pages).select("*").order("sort_order", { ascending: true });
+    if (error) throw error;
+    state = { ...state, pages: ((data ?? []) as DbPageRow[]).map(pageFromRow) };
+    emit();
+    if (import.meta.env.DEV) console.debug(`[Olkinyei] Pages synced: ${data?.length ?? 0}`);
+  } catch (error) {
+    pagesBootstrapped = false;
+    console.error(
+      "[Olkinyei] Could not load CMS pages from Supabase:",
+      error instanceof Error ? error.message : error,
+      "\nRun supabase/pages_sync.sql and verify public.pages RLS.",
+    );
+  }
+}
+
+function applyPageRealtime(action: "INSERT" | "UPDATE" | "DELETE", row: unknown) {
+  if (!row || typeof row !== "object") return;
+  const record = row as DbPageRow;
+  if (action === "DELETE") {
+    state = { ...state, pages: state.pages.filter((page) => page.id !== record.id) };
+    emit();
+    return;
+  }
+  const page = pageFromRow(record);
+  const exists = state.pages.some((entry) => entry.id === page.id);
+  const pages = exists
+    ? state.pages.map((entry) => entry.id === page.id ? page : entry)
+    : [...state.pages, page];
+  state = { ...state, pages: pages.sort((a, b) => a.sortOrder - b.sortOrder) };
+  emit();
 }
 
 // ============ Blog post schema mapping (CMS ⇆ Supabase blog_posts) ============
@@ -610,7 +704,15 @@ if (typeof window !== "undefined" && supabase) {
     .on("postgres_changes", { event: "*", schema: "public", table: "cms_content" }, (payload) => {
       const row = payload.new as { id?: string; content?: unknown };
       if (row?.id === "site_settings") applyCloudSiteSettings(row.content);
-      if (row?.id === "pages") applyCloudPages(row.content);
+    })
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "pages" }, (payload) => {
+      applyPageRealtime("INSERT", payload.new);
+    })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pages" }, (payload) => {
+      applyPageRealtime("UPDATE", payload.new);
+    })
+    .on("postgres_changes", { event: "DELETE", schema: "public", table: "pages" }, (payload) => {
+      applyPageRealtime("DELETE", payload.old);
     })
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "blog_posts" }, (payload) => {
       applyBlogRealtimeRow("INSERT", payload.new);
@@ -644,12 +746,27 @@ if (typeof window !== "undefined" && supabase) {
   // Boot the content. Public bundle shares this module, so visitors get
   // fresh brand settings on first paint as well.
   void loadCloudCmsContent();
+  void loadCloudPages();
   void loadCloudBlogPosts();
   void loadCloudTestimonials();
   void loadCloudPackages();
+
+  // RLS correctly withholds a row after it is unpublished. Depending on the
+  // Realtime server version, that transition may not deliver the now-hidden
+  // UPDATE to an anonymous subscriber. Re-query on focus and at a modest
+  // interval so open public tabs also remove unpublished rows promptly.
+  const refreshPublishedContent = () => {
+    if (document.visibilityState === "hidden") return;
+    pagesBootstrapped = false;
+    packagesBootstrapped = false;
+    void loadCloudPages();
+    void loadCloudPackages();
+  };
+  window.addEventListener("focus", refreshPublishedContent);
+  window.setInterval(refreshPublishedContent, 60_000);
 }
 
-export function newBlogId(): string {
+export function newContentId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
   // Fallback for very old browsers: RFC-4122 v4 shape.
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
@@ -676,7 +793,7 @@ type DbPackageRow = {
   price_usd: number;
   discount: number | null;
   hero_image: string;
-  gallery: string[] | null;
+  gallery: unknown[] | null;
   summary: string;
   description: string | null;
   signature: string | null;
@@ -700,7 +817,34 @@ type DbPackageRow = {
   updated_at: string;
 };
 
+function packageImageFromValue(value: unknown, index: number, title: string): SafariPackageImage | null {
+  // Backwards compatibility while packages_sync.sql migrates historic URL
+  // arrays. All writes below use the object shape and explicit sort_order.
+  if (typeof value === "string") {
+    return { id: newContentId(), imageUrl: value, altText: title, caption: "", sortOrder: index };
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const image = value as Record<string, unknown>;
+  const imageUrl = String(image.image_url ?? image.url ?? "").trim();
+  if (!imageUrl) return null;
+  return {
+    id: String(image.id ?? newContentId()),
+    imageUrl,
+    altText: String(image.alt_text ?? ""),
+    caption: String(image.caption ?? ""),
+    sortOrder: Number.isFinite(Number(image.sort_order)) ? Number(image.sort_order) : index,
+  };
+}
+
 function packageFromRow(row: DbPackageRow): SafariPackage {
+  const gallery = (row.gallery ?? [])
+    .map((image, index) => packageImageFromValue(image, index, row.title))
+    .filter((image): image is SafariPackageImage => image !== null)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  if (row.hero_image && !gallery.some((image) => image.imageUrl === row.hero_image)) {
+    gallery.unshift({ id: newContentId(), imageUrl: row.hero_image, altText: row.title, caption: "", sortOrder: 0 });
+  }
+  const orderedGallery = gallery.map((image, index) => ({ ...image, sortOrder: index }));
   return {
     id: row.id,
     slug: row.slug,
@@ -710,8 +854,8 @@ function packageFromRow(row: DbPackageRow): SafariPackage {
     nights: row.nights ?? 0,
     price: Number(row.price_usd) || 0,
     discount: row.discount ?? undefined,
-    image: row.hero_image ?? "",
-    gallery: row.gallery ?? [],
+    image: row.hero_image ?? orderedGallery[0]?.imageUrl ?? "",
+    gallery: orderedGallery,
     summary: row.summary ?? "",
     description: row.description ?? "",
     signature: row.signature ?? "",
@@ -746,7 +890,16 @@ function packageToRow(pkg: SafariPackage): Record<string, unknown> {
     price_usd: pkg.price,
     discount: pkg.discount ?? null,
     hero_image: pkg.image,
-    gallery: pkg.gallery,
+    gallery: pkg.gallery
+      .slice()
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((image, index) => ({
+        id: image.id,
+        image_url: image.imageUrl,
+        alt_text: image.altText,
+        caption: image.caption,
+        sort_order: index,
+      })),
     summary: pkg.summary,
     description: pkg.description,
     signature: pkg.signature,
@@ -784,8 +937,9 @@ async function loadCloudPackages(): Promise<void> {
       result = await client.from("packages").select("*").order("updated_at", { ascending: false });
     }
     if (result.error) throw new Error(result.error.message);
-    const data = result.data;
-    if (!data || data.length === 0) return; // keep seed content until the table is populated
+    const data = result.data ?? [];
+    // Replace outright, including with an empty result: this removes packages
+    // that were unpublished/archived and are now hidden by anonymous RLS.
     state = { ...state, packages: (data as DbPackageRow[]).map(packageFromRow) };
     emit();
     if (import.meta.env.DEV) console.debug(`[Olkinyei] Packages synced: ${data.length}`);
@@ -816,47 +970,25 @@ function applyPackageRealtime(action: "INSERT" | "UPDATE" | "DELETE", row: unkno
   emit();
 }
 
-/** Persists a package to the database. Errors surface, never swallowed. */
-function packageCloudSave(pkg: SafariPackage | null, deletedId?: string): void {
+/** Writes a package row first and returns the canonical database record. */
+async function packageCloudWrite(pkg: SafariPackage, mode: "insert" | "update"): Promise<{ ok: boolean; package?: SafariPackage; message?: string }> {
   const client = supabase;
-  if (!client) return;
-  void (async () => {
-    try {
-      if (deletedId) {
-        if (!UUID_PATTERN.test(deletedId)) return;
-        const { error } = await client.from("packages").delete().eq("id", deletedId);
-        if (error) throw error;
-        return;
-      }
-      if (!pkg) return;
-      const row = packageToRow(pkg);
-      if (UUID_PATTERN.test(pkg.id)) {
-        const { error } = await client.from("packages").upsert(row, { onConflict: "id" });
-        if (error) throw error;
-        return;
-      }
-      // Seed ids ("p1") are not uuids: let Postgres mint one, keyed by slug.
-      const { id: _seedId, ...withoutId } = row;
-      const { data, error } = await client
-        .from("packages")
-        .upsert(withoutId, { onConflict: "slug" })
-        .select("id")
-        .single();
-      if (error) throw error;
-      const cloudId = (data as { id: string }).id;
-      state = { ...state, packages: state.packages.map((p) => (p.id === pkg.id ? { ...p, id: cloudId } : p)) };
-      emit();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (import.meta.env.DEV) console.error("[Olkinyei] package cloud write failed:", message);
-      notify({
-        type: "error",
-        title: "Not published to the website",
-        message: `Saved locally, but Supabase rejected it: ${message.slice(0, 140)}`,
-        duration: 9000,
-      });
-    }
-  })();
+  if (!client) {
+    const message = "Connect Supabase before changing Safari Packages. Packages are never stored only in this browser.";
+    notify({ type: "error", title: "Cloud database required", message });
+    return { ok: false, message };
+  }
+  const query = mode === "insert"
+    ? client.from(TABLES.packages).insert(packageToRow(pkg))
+    : client.from(TABLES.packages).update(packageToRow(pkg)).eq("id", pkg.id);
+  const { data, error } = await query.select("*").single();
+  if (error) {
+    const duplicate = error.code === "23505";
+    const message = duplicate ? `The package slug /${pkg.slug} already exists.` : error.message;
+    notify({ type: "error", title: duplicate ? "Slug already exists" : "Package was not saved", message, duration: 9000 });
+    return { ok: false, message };
+  }
+  return { ok: true, package: packageFromRow(data as DbPackageRow) };
 }
 
 // ============ Testimonials (public.testimonials) ============
@@ -1223,10 +1355,12 @@ const actions = {
   async reloadStaffContent(): Promise<void> {
     testimonialsBootstrapped = false;
     packagesBootstrapped = false;
+    pagesBootstrapped = false;
     blogBootstrapped = false;
     await Promise.all([
       loadCloudTestimonials(),
       loadCloudPackages(),
+      loadCloudPages(),
       loadCloudBlogPosts(),
     ]);
   },
@@ -1563,45 +1697,76 @@ const actions = {
     emit();
   },
 
-  // Packages
-  createPackage(pkg: Omit<SafariPackage, "id" | "createdAt" | "updatedAt" | "slug">) {
-    // packages.id is a Postgres uuid column.
-    const id = newBlogId();
-    const slug = pkg.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const entry: SafariPackage = { ...pkg, id, slug, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-    state = { ...state, packages: [entry, ...state.packages] };
-    logActivity("created", "Package", id, entry.title);
-    notify({ type: "success", title: "Package created", message: `${entry.title} is now in your library.` });
+  // Packages — Supabase is written before in-memory state changes.
+  async createPackage(pkg: Omit<SafariPackage, "id" | "createdAt" | "updatedAt" | "slug">): Promise<{ ok: boolean; package?: SafariPackage; message?: string }> {
+    const actor = currentUser();
+    if (!actor || (!can(actor, "packages", "create") && !can(actor, "packages", "manage"))) {
+      const message = "You do not have permission to create Safari Packages.";
+      notify({ type: "error", title: "Not permitted", message });
+      return { ok: false, message };
+    }
+    const baseSlug = pkg.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "safari-package";
+    let slug = baseSlug;
+    let suffix = 2;
+    while (state.packages.some((entry) => entry.slug === slug)) slug = `${baseSlug}-${suffix++}`;
+    const now = new Date().toISOString();
+    const entry: SafariPackage = { ...pkg, id: newContentId(), slug, createdAt: now, updatedAt: now };
+    const result = await packageCloudWrite(entry, "insert");
+    if (!result.ok || !result.package) return result;
+    const saved = result.package;
+    state = { ...state, packages: [saved, ...state.packages.filter((item) => item.id !== saved.id)] };
+    logActivity("created", "Package", saved.id, saved.title);
+    audit("package.created", "package", "success", { actorId: actor.id, targetId: saved.id, reason: saved.slug });
+    notify({ type: "success", title: "Package created", message: `${saved.title} saved to Supabase.` });
     emit();
-    packageCloudSave(entry);
-    return entry;
+    return { ok: true, package: saved };
   },
-  updatePackage(id: string, patch: Partial<SafariPackage>) {
-    const pkg = state.packages.find((p) => p.id === id);
-    if (!pkg) return;
-    const next = { ...pkg, ...patch, updatedAt: new Date().toISOString() };
-    state = { ...state, packages: state.packages.map((p) => (p.id === id ? next : p)) };
-    logActivity("updated", "Package", id, pkg.title);
-    notify({ type: "success", title: "Package updated", message: `${pkg.title} saved.` });
+  async updatePackage(id: string, patch: Partial<SafariPackage>): Promise<{ ok: boolean; package?: SafariPackage; message?: string }> {
+    const actor = currentUser();
+    if (!actor || (!can(actor, "packages", "edit") && !can(actor, "packages", "manage") && !can(actor, "packages", "publish"))) {
+      const message = "You do not have permission to edit Safari Packages.";
+      notify({ type: "error", title: "Not permitted", message });
+      return { ok: false, message };
+    }
+    const existing = state.packages.find((item) => item.id === id);
+    if (!existing) return { ok: false, message: "Package not found." };
+    const next: SafariPackage = { ...existing, ...patch, updatedAt: new Date().toISOString() };
+    const result = await packageCloudWrite(next, "update");
+    if (!result.ok || !result.package) return result;
+    const saved = result.package;
+    state = { ...state, packages: state.packages.map((item) => item.id === id ? saved : item) };
+    logActivity("updated", "Package", id, saved.title);
+    audit("package.updated", "package", "success", { actorId: actor.id, targetId: id });
+    notify({ type: "success", title: "Package updated", message: `${saved.title} saved to Supabase.` });
     emit();
-    packageCloudSave(next);
+    return { ok: true, package: saved };
   },
-  deletePackage(id: string) {
-    const pkg = state.packages.find((p) => p.id === id);
-    if (!pkg) return;
-    // Archive rather than delete: bookings reference packages by title.
-    const next = { ...pkg, archived: true, published: false };
-    state = { ...state, packages: state.packages.map((p) => (p.id === id ? next : p)) };
-    logActivity("archived", "Package", id, pkg.title);
-    notify({ type: "info", title: "Package archived", message: `${pkg.title} is hidden from the public site.` });
+  async deletePackage(id: string): Promise<{ ok: boolean; message?: string }> {
+    const actor = currentUser();
+    if (!actor || (!can(actor, "packages", "delete") && !can(actor, "packages", "manage"))) {
+      const message = "You do not have permission to archive Safari Packages.";
+      notify({ type: "error", title: "Not permitted", message });
+      return { ok: false, message };
+    }
+    const existing = state.packages.find((item) => item.id === id);
+    if (!existing) return { ok: false, message: "Package not found." };
+    // Soft deletion preserves booking references and every gallery record.
+    const next = { ...existing, archived: true, published: false, updatedAt: new Date().toISOString() };
+    const result = await packageCloudWrite(next, "update");
+    if (!result.ok || !result.package) return { ok: false, message: result.message };
+    state = { ...state, packages: state.packages.map((item) => item.id === id ? result.package! : item) };
+    logActivity("archived", "Package", id, existing.title);
+    audit("package.archived", "package", "success", { actorId: actor.id, targetId: id });
+    notify({ type: "info", title: "Package archived", message: `${existing.title} is hidden from the public site.` });
     emit();
-    packageCloudSave(next);
+    return { ok: true };
   },
-  duplicatePackage(id: string) {
-    const pkg = state.packages.find((p) => p.id === id);
-    if (!pkg) return;
-    const { slug: _slug, id: _id, createdAt: _c, updatedAt: _u, ...rest } = pkg;
-    actions.createPackage({ ...rest, title: `${pkg.title} (copy)`, published: false, featured: false });
+  async duplicatePackage(id: string): Promise<{ ok: boolean; message?: string }> {
+    const pkg = state.packages.find((item) => item.id === id);
+    if (!pkg) return { ok: false, message: "Package not found." };
+    const { slug: _slug, id: _id, createdAt: _created, updatedAt: _updated, ...rest } = pkg;
+    const result = await actions.createPackage({ ...rest, title: `${pkg.title} (copy)`, published: false, featured: false });
+    return { ok: result.ok, message: result.message };
   },
 
   // Destinations
@@ -1658,7 +1823,7 @@ const actions = {
   // Blog — write-through to Supabase so the public site stays synchronized.
   createBlogPost(p: Omit<BlogPost, "id" | "createdAt" | "updatedAt">) {
     // Must be a real uuid — blog_posts.id is a Postgres uuid column.
-    const id = newBlogId();
+    const id = newContentId();
     const entry: BlogPost = { ...p, id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     state = { ...state, blogPosts: [entry, ...state.blogPosts] };
     logActivity("created", "Blog Post", id, entry.title);
@@ -2139,15 +2304,129 @@ const actions = {
     emit();
   },
 
-  // Pages
-  updatePage(id: string, patch: Partial<PageSettings>) {
-    const p = state.pages.find((x) => x.id === id);
-    if (!p) return;
-    state = { ...state, pages: state.pages.map((x) => x.id === id ? { ...x, ...patch, updatedAt: new Date().toISOString(), updatedBy: currentUser()?.id ?? "" } : x) };
-    logActivity(patch.published === false ? "archived" : "updated", "Page", id, p.title);
-    notify({ type: "success", title: "Page updated", message: `${p.title} saved.` });
+  // Pages — every mutation is persisted to public.pages before local state
+  // changes. Supabase is the source of truth; there is no local-only page CRUD.
+  async createPage(input: Omit<PageSettings, "id" | "createdAt" | "updatedAt" | "updatedBy">): Promise<{ ok: boolean; page?: PageSettings; message?: string }> {
+    const actor = currentUser();
+    if (!actor || (!can(actor, "pages", "create") && !can(actor, "pages", "manage"))) {
+      const message = "You do not have permission to create pages.";
+      notify({ type: "error", title: "Not permitted", message });
+      return { ok: false, message };
+    }
+    const slug = normalizePageSlug(input.slug || input.title);
+    const slugError = validatePageSlug(slug);
+    if (slugError) {
+      notify({ type: "error", title: "Invalid slug", message: slugError });
+      return { ok: false, message: slugError };
+    }
+    if (state.pages.some((page) => page.slug.toLowerCase() === slug)) {
+      const message = `The slug /${slug} is already used by another page.`;
+      notify({ type: "error", title: "Slug already exists", message });
+      return { ok: false, message };
+    }
+    if (!supabase) {
+      const message = "Connect Supabase before creating a page. Pages are never stored only in this browser.";
+      notify({ type: "error", title: "Cloud database required", message });
+      return { ok: false, message };
+    }
+
+    const now = new Date().toISOString();
+    const entry: PageSettings = {
+      ...input,
+      id: newContentId(),
+      slug,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: actor.id,
+    };
+    const { data, error } = await supabase.from(TABLES.pages).insert(pageToRow(entry)).select("*").single();
+    if (error) {
+      const duplicate = error.code === "23505";
+      const message = duplicate ? `The slug /${slug} is already used by another page.` : error.message;
+      notify({ type: "error", title: duplicate ? "Slug already exists" : "Page was not created", message });
+      return { ok: false, message };
+    }
+    const page = pageFromRow(data as DbPageRow);
+    state = { ...state, pages: [...state.pages.filter((item) => item.id !== page.id), page].sort((a, b) => a.sortOrder - b.sortOrder) };
+    logActivity("created", "Page", page.id, page.title);
+    audit("page.created", "page", "success", { actorId: actor.id, targetId: page.id, reason: page.slug });
+    notify({ type: "success", title: "Page created", message: `${page.title} saved to Supabase.` });
     emit();
-    void cloudSaveDocument("pages", state.pages);
+    return { ok: true, page };
+  },
+
+  async updatePage(id: string, patch: Partial<PageSettings>): Promise<{ ok: boolean; page?: PageSettings; message?: string }> {
+    const actor = currentUser();
+    if (!actor || (!can(actor, "pages", "edit") && !can(actor, "pages", "manage") && !can(actor, "pages", "publish"))) {
+      const message = "You do not have permission to edit pages.";
+      notify({ type: "error", title: "Not permitted", message });
+      return { ok: false, message };
+    }
+    const existing = state.pages.find((page) => page.id === id);
+    if (!existing) return { ok: false, message: "Page not found." };
+    const next: PageSettings = {
+      ...existing,
+      ...patch,
+      content: patch.content ? { ...existing.content, ...patch.content } : existing.content,
+      seo: patch.seo ? { ...existing.seo, ...patch.seo } : existing.seo,
+      slug: normalizePageSlug(patch.slug ?? existing.slug),
+      updatedAt: new Date().toISOString(),
+      updatedBy: actor.id,
+    };
+    const slugError = validatePageSlug(next.slug);
+    if (slugError) {
+      notify({ type: "error", title: "Invalid slug", message: slugError });
+      return { ok: false, message: slugError };
+    }
+    if (state.pages.some((page) => page.id !== id && page.slug.toLowerCase() === next.slug)) {
+      const message = `The slug /${next.slug} is already used by another page.`;
+      notify({ type: "error", title: "Slug already exists", message });
+      return { ok: false, message };
+    }
+    if (!supabase) {
+      const message = "Connect Supabase before editing a page. Pages are never stored only in this browser.";
+      notify({ type: "error", title: "Cloud database required", message });
+      return { ok: false, message };
+    }
+
+    const { data, error } = await supabase
+      .from(TABLES.pages)
+      .update(pageToRow(next))
+      .eq("id", id)
+      .select("*")
+      .single();
+    if (error) {
+      const duplicate = error.code === "23505";
+      const message = duplicate ? `The slug /${next.slug} is already used by another page.` : error.message;
+      notify({ type: "error", title: duplicate ? "Slug already exists" : "Page was not saved", message });
+      return { ok: false, message };
+    }
+    const page = pageFromRow(data as DbPageRow);
+    state = { ...state, pages: state.pages.map((item) => item.id === id ? page : item).sort((a, b) => a.sortOrder - b.sortOrder) };
+    logActivity(page.status === "archived" ? "archived" : "updated", "Page", id, page.title);
+    audit("page.updated", "page", "success", { actorId: actor.id, targetId: id, reason: page.status });
+    notify({ type: "success", title: "Page updated", message: `${page.title} saved to Supabase.` });
+    emit();
+    return { ok: true, page };
+  },
+
+  async deletePage(id: string): Promise<{ ok: boolean; message?: string }> {
+    const actor = currentUser();
+    if (!actor || !can(actor, "pages", "delete")) {
+      const message = "You do not have permission to delete pages.";
+      notify({ type: "error", title: "Not permitted", message });
+      return { ok: false, message };
+    }
+    const page = state.pages.find((entry) => entry.id === id);
+    if (!page) return { ok: false, message: "Page not found." };
+    // Soft deletion is intentional: route history, incoming links, SEO data,
+    // and specialist layout relationships remain recoverable. No related row
+    // is cascaded or destroyed.
+    const result = await actions.updatePage(id, { status: "archived", showInNavigation: false });
+    if (!result.ok) return { ok: false, message: result.message };
+    audit("page.archived", "page", "success", { actorId: actor.id, targetId: id, reason: page.slug });
+    notify({ type: "info", title: "Page archived", message: `${page.title} was unpublished and removed from navigation.` });
+    return { ok: true };
   },
 
   // Site Settings — logo, brand colors, tagline, contact info, analytics.
@@ -2156,7 +2435,7 @@ const actions = {
     logActivity("updated", "Site Settings", "global", "Global site settings");
     notify({ type: "success", title: "Settings saved", message: "Global site settings updated on all devices." });
     emit();
-    void cloudSaveDocument("site_settings", state.siteSettings);
+    void cloudSaveSiteSettings(state.siteSettings);
   },
 
   resetDemoData() {

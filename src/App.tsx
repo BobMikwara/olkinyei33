@@ -45,13 +45,13 @@ import {
 import {
   Booking,
   Destination,
-  blogPosts,
   destinations,
   galleryItems,
   imagery,
   timeline,
 } from "./data";
-import type { SafariPackage } from "./admin/types";
+import type { PageSettings, SafariPackage } from "./admin/types";
+import { pagePath } from "./admin/pages";
 import {
   getCloudBookings,
   hasCloudBackend,
@@ -67,14 +67,15 @@ gsap.registerPlugin(ScrollTrigger, SplitText, MorphSVGPlugin);
 const SafariSky = lazy(() => import("./SafariSky"));
 const AdminApp = lazy(() => import("./admin/AdminApp"));
 
-type Page = "home" | "about" | "experiences" | "destinations" | "gallery" | "journal" | "contact";
+type KnownPage = "home" | "about" | "experiences" | "destinations" | "gallery" | "journal" | "contact";
+type Page = KnownPage | "dynamic";
 type EditableContent = {
   homeStatement: string;
   conservationStatement: string;
   contactEmail: string;
 };
 
-const ROUTES: Record<Page, string> = {
+const ROUTES: Record<KnownPage, string> = {
   home: "/",
   about: "/about",
   experiences: "/safari-experiences",
@@ -84,22 +85,8 @@ const ROUTES: Record<Page, string> = {
   contact: "/contact",
 };
 
-// Field Notes and Journal are one destination. `gallery` still exists as a
-// route so historic /gallery links keep working (see pageFromPath).
-const navItems: { page: Page; label: string }[] = [
-  { page: "home", label: "Home" },
-  { page: "about", label: "Our Story" },
-  { page: "experiences", label: "Safaris" },
-  { page: "destinations", label: "Destinations" },
-  { page: "journal", label: "Field Notes & Journal" },
-  { page: "contact", label: "Plan Your Journey" },
-];
-
-const defaultContent: EditableContent = {
-  homeStatement: "There is a moment when the plains stop being scenery and become something felt. We design every journey around that moment.",
-  conservationStatement: "Every expedition contributes directly to land leases, guide education and community-led conservation in the places we travel.",
-  contactEmail: "journeys@olkinyei.com",
-};
+// Navigation labels, visibility, and order come from public.pages. Historic
+// /gallery links remain a route alias for the Journal in pageFromPath().
 
 const emptyBooking: Omit<Booking, "reference" | "createdAt" | "status"> = {
   safari: "",
@@ -120,12 +107,10 @@ const emptyBooking: Omit<Booking, "reference" | "createdAt" | "status"> = {
 
 function pageFromPath(pathname: string): Page {
   const cleanPath = pathname !== "/" ? pathname.replace(/\/$/, "") : pathname;
-  // Article routes (/journal/<slug>) render inside the journal page.
   if (cleanPath.startsWith("/journal/")) return "journal";
-  // Field Notes merged into the Journal. Legacy /gallery links still resolve.
   if (cleanPath === "/gallery" || cleanPath.startsWith("/gallery/")) return "journal";
-  const match = (Object.keys(ROUTES) as Page[]).find((key) => ROUTES[key] === cleanPath);
-  return match ?? "home";
+  const match = (Object.keys(ROUTES) as KnownPage[]).find((key) => ROUTES[key] === cleanPath);
+  return match ?? "dynamic";
 }
 
 // Returns the article slug when the URL points at a single post.
@@ -270,10 +255,14 @@ function SoundToggle() {
   );
 }
 
-function Header({ page, navigate }: { page: Page; navigate: (page: Page) => void }) {
+function Header({ currentPath, navigatePath }: { currentPath: string; navigatePath: (path: string) => void }) {
   const site = useCmsStore((state) => state.siteSettings);
+  const pages = useCmsStore((state) => state.pages);
   const [open, setOpen] = useState(false);
-  const select = (next: Page) => { setOpen(false); navigate(next); };
+  const navigation = useMemo(() => pages
+    .filter((page) => page.status === "published" && page.showInNavigation)
+    .sort((a, b) => a.sortOrder - b.sortOrder), [pages]);
+  const select = (path: string) => { setOpen(false); navigatePath(path); };
   useEffect(() => {
     if (!open) return;
     const closeOnEscape = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
@@ -283,7 +272,7 @@ function Header({ page, navigate }: { page: Page; navigate: (page: Page) => void
   return (
     <>
       <header className="site-header">
-        <button className="logo-button" onClick={() => select("home")} aria-label="Olkinyei Expeditions home"><Logo compact /></button>
+        <button className="logo-button" onClick={() => select("/")} aria-label="Olkinyei Expeditions home"><Logo compact /></button>
         <div className="header-actions"><SoundToggle /><button className="menu-toggle" onClick={() => setOpen(true)} aria-expanded={open} aria-label="Open menu"><Menu size={20} /><span>Menu</span></button></div>
       </header>
       <AnimatePresence>
@@ -291,9 +280,9 @@ function Header({ page, navigate }: { page: Page; navigate: (page: Page) => void
           <motion.div className="menu-panel" initial={{ clipPath: "inset(0 0 100% 0)" }} animate={{ clipPath: "inset(0 0 0% 0)" }} exit={{ clipPath: "inset(0 0 100% 0)" }} transition={{ duration: 0.75, ease: [0.83, 0, 0.17, 1] }}>
             <div className="menu-top"><Logo /><button onClick={() => setOpen(false)} aria-label="Close menu"><X /></button></div>
             <nav className="menu-links" aria-label="Main navigation">
-              {navItems.map((item, index) => (
-                <motion.button key={item.page} className={page === item.page ? "active" : ""} onClick={() => select(item.page)} initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.18 + index * 0.06 }}>
-                  <span>0{index + 1}</span>{item.label}<ArrowRight />
+              {navigation.map((item, index) => (
+                <motion.button key={item.id} className={currentPath === pagePath(item) ? "active" : ""} onClick={() => select(pagePath(item))} initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.18 + index * 0.06 }}>
+                  <span>{String(index + 1).padStart(2, "0")}</span>{item.navigationLabel || item.title}<ArrowRight />
                 </motion.button>
               ))}
             </nav>
@@ -309,24 +298,32 @@ function ScrollCue() {
   return <div className="scroll-cue"><ArrowDown size={16} /><span>Scroll to enter</span></div>;
 }
 
-function PageHero({ eyebrow, title, text, image, align = "left", children }: {
-  eyebrow: string;
-  title: string;
-  text: string;
-  image: string;
+function PageHero({ pageSlug, layout, align = "left", children }: {
+  pageSlug?: string;
+  layout?: PageSettings["layout"];
   align?: "left" | "center";
   children?: ReactNode;
 }) {
-  const cmsPage = useCmsStore((state) => state.pages.find((item) => item.route === window.location.pathname));
-  const published = cmsPage?.published ? cmsPage : null;
-  return (
+  const page = useCmsStore((state) => state.pages.find((item) => item.status === "published" && (pageSlug ? item.slug === pageSlug : item.layout === layout)));
+  if (!page) return null;
+  const body = String(page.content.body ?? "").trim();
+  return <>
     <section className={`page-hero page-hero--${align}`}>
-      <img src={published?.heroImage || image} alt="" className="page-hero-image" fetchPriority="high" />
+      {page.featuredImage && <img src={page.featuredImage} alt="" className="page-hero-image" fetchPriority="high" />}
       <div className="page-hero-wash" />
-      <div className="page-hero-copy"><p className="eyebrow">{published?.heroEyebrow || eyebrow}</p><h1 className="split-reveal">{published?.heroTitle || title}</h1><p>{published?.heroText || text}</p>{children}</div>
+      <div className="page-hero-copy"><p className="eyebrow">{page.heroEyebrow}</p><h1 className="split-reveal">{page.heroTitle || page.title}</h1>{page.heroText && <p>{page.heroText}</p>}{children}</div>
       <svg className="hero-morph" viewBox="0 0 1440 140" preserveAspectRatio="none" aria-hidden="true"><path className="morph-path" d="M0,108 C240,72 430,126 650,88 C900,45 1140,115 1440,68 L1440,140 L0,140 Z" fill="#f3ecdf" /></svg>
     </section>
-  );
+    {body && <section className="cms-page-body section-pad" aria-label={`${page.title} content`}><div>{body.split(/\n{2,}/).map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div></section>}
+  </>;
+}
+
+function DynamicCmsPage({ page }: { page: PageSettings }) {
+  return <PageHero pageSlug={page.slug} />;
+}
+
+function PageNotFound() {
+  return <section className="page-not-found section-pad"><p className="eyebrow">404 / PAGE NOT FOUND</p><h1>This trail ends here.</h1><p>The page is unavailable or has not been published.</p><a className="button button--dark" href="/">Return home</a></section>;
 }
 
 function SectionHeading({ number, eyebrow, title, text, dark = false }: { number?: string; eyebrow: string; title: string; text?: string; dark?: boolean }) {
@@ -341,13 +338,17 @@ function ImageReveal({ src, alt, className = "" }: { src: string; alt: string; c
   return <div className={`image-reveal ${className}`} data-image-reveal><img src={src} alt={alt} loading="lazy" data-parallax /></div>;
 }
 
-function Footer({ navigate }: { navigate: (page: Page) => void; openAdmin?: () => void }) {
+function Footer({ navigatePath }: { navigatePath: (path: string) => void }) {
   const site = useCmsStore((state) => state.siteSettings);
+  const pages = useCmsStore((state) => state.pages);
+  const navigation = useMemo(() => pages
+    .filter((page) => page.status === "published" && page.showInNavigation)
+    .sort((a, b) => a.sortOrder - b.sortOrder), [pages]);
   return (
     <footer className="footer">
-      <div className="footer-main"><Logo /><h2>Go where the wild still sets the pace.</h2><MagneticButton className="button button--sand" onClick={() => navigate("contact")}>Begin a private journey <ArrowRight size={17} /></MagneticButton></div>
+      <div className="footer-main"><Logo /><h2>Go where the wild still sets the pace.</h2><MagneticButton className="button button--sand" onClick={() => navigatePath("/contact")}>Begin a private journey <ArrowRight size={17} /></MagneticButton></div>
       <div className="footer-links">
-        <div><span>Explore</span>{navItems.slice(1, 6).map((item) => <button key={item.page} onClick={() => navigate(item.page)}>{item.label}</button>)}</div>
+        <div><span>Explore</span>{navigation.map((page) => <button key={page.id} onClick={() => navigatePath(pagePath(page))}>{page.navigationLabel || page.title}</button>)}</div>
         <div><span>Find us</span><a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a><a href={`tel:${site.phone.replace(/\s+/g, "")}`}>{site.phone}</a>{site.social.map((entry) => <a key={entry.platform} href={entry.url} target="_blank" rel="noreferrer">{entry.platform} <ExternalLink size={12} /></a>)}</div>
         <div><span>Field offices</span>{site.addresses.map((entry) => <p key={entry.city}>{entry.address}, {entry.city}</p>)}</div>
       </div>
@@ -356,8 +357,8 @@ function Footer({ navigate }: { navigate: (page: Page) => void; openAdmin?: () =
   );
 }
 
-function HomePage({ navigate, content, openSafari, onOpenPost }: { navigate: (page: Page) => void; content: EditableContent; openSafari: (safari: SafariPackage) => void; onOpenPost: (slug: string) => void }) {
-  const cmsHome = useCmsStore((state) => state.pages.find((item) => item.route === "/"));
+function HomePage({ navigate, content, openSafari, onOpenPost }: { navigate: (page: KnownPage) => void; content: EditableContent; openSafari: (safari: SafariPackage) => void; onOpenPost: (slug: string) => void }) {
+  const cmsHome = useCmsStore((state) => state.pages.find((item) => item.layout === "home" && item.status === "published"));
   const site = useCmsStore((state) => state.siteSettings);
   const liveSafaris = usePublishedSafaris();
   // Live blog posts from the CMS (Supabase blog_posts). Published only;
@@ -370,15 +371,9 @@ function HomePage({ navigate, content, openSafari, onOpenPost }: { navigate: (pa
         if (a.featured !== b.featured) return a.featured ? -1 : 1;
         return new Date(b.publishedAt ?? 0).getTime() - new Date(a.publishedAt ?? 0).getTime();
       });
-    if (live.length > 0) return live.slice(0, 3);
-    return blogPosts.slice(0, 3).map((post, index) => ({
-      id: `static-${index}`, slug: post.title.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-      title: post.title, excerpt: "", body: "", category: post.category as "Wildlife", tags: [],
-      heroImage: post.image, authorId: "u1", author: "Olkinyei", readingTime: 5,
-      seo: { title: post.title, description: "" }, publishedAt: post.date, status: "published" as const,
-      featured: index === 0, comments: 0, createdAt: post.date, updatedAt: post.date,
-    }));
+    return live.slice(0, 3);
   }, [cmsPosts]);
+  const homeBody = String(cmsHome?.content.body ?? "").trim();
   const [videoPlaying, setVideoPlaying] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const toggleVideo = () => {
@@ -389,15 +384,16 @@ function HomePage({ navigate, content, openSafari, onOpenPost }: { navigate: (pa
   return (
     <>
       <section className="home-hero">
-        <video ref={videoRef} className="home-hero-media" autoPlay muted loop playsInline preload="metadata" poster={imagery.heroPoster} aria-label="Wildebeest and zebra moving across the African savanna"><source src={imagery.heroVideo} type="video/mp4" /></video>
+        <video ref={videoRef} className="home-hero-media" autoPlay muted loop playsInline preload="metadata" poster={cmsHome?.featuredImage || imagery.heroPoster} aria-label="Wildebeest and zebra moving across the African savanna"><source src={imagery.heroVideo} type="video/mp4" /></video>
         <div className="home-hero-grade" /><Suspense fallback={null}><SafariSky /></Suspense>
         <div className="home-hero-content">
-          <p className="hero-location">{cmsHome?.published ? cmsHome.heroEyebrow : "Private journeys across Kenya and Tanzania"}</p>
+          <p className="hero-location">{cmsHome?.heroEyebrow}</p>
           <div className="hero-brand split-reveal">{site.brandName.replace(/\s+Expeditions$/i, "").toUpperCase()}</div>
-          <div className="hero-bottom"><div><h1>{cmsHome?.published ? cmsHome.heroTitle : <>East Africa,<br /><em>unhurried.</em></>}</h1><p>{cmsHome?.published ? cmsHome.heroText : "Private safaris shaped by the migration, not the clock."}</p></div><div className="hero-ctas"><MagneticButton className="button button--sand" onClick={() => navigate("contact")}>Book your safari <ArrowRight size={17} /></MagneticButton><button onClick={() => navigate("destinations")}>Explore Tanzania / Kenya</button><button onClick={() => navigate("experiences")}>Luxury experiences</button></div></div>
+          <div className="hero-bottom"><div><h1>{cmsHome?.heroTitle}</h1><p>{cmsHome?.heroText}</p></div><div className="hero-ctas"><MagneticButton className="button button--sand" onClick={() => navigate("contact")}>Book your safari <ArrowRight size={17} /></MagneticButton><button onClick={() => navigate("destinations")}>Explore Tanzania / Kenya</button><button onClick={() => navigate("experiences")}>Luxury experiences</button></div></div>
         </div>
         <button className="video-control" onClick={toggleVideo} aria-label={videoPlaying ? "Pause background film" : "Play background film"}>{videoPlaying ? <Pause size={14} /> : <Play size={14} />}</button><ScrollCue />
       </section>
+      {homeBody && <section className="cms-page-body section-pad" aria-label="Home page content"><div>{homeBody.split(/\n{2,}/).map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div></section>}
       <section className="manifesto section-pad"><p className="vertical-label">THE OLKINYEI WAY</p><div className="manifesto-copy"><p className="eyebrow" data-reveal>Not a tour. A rare point of view.</p><h2 className="split-reveal">{content.homeStatement}</h2><button className="text-link" onClick={() => navigate("about")}>Discover our philosophy <ArrowRight size={16} /></button></div></section>
       <section className="migration-story">
         <div className="migration-image"><img src={imagery.migration} alt="A vast wildebeest herd crossing the Serengeti" loading="lazy" data-parallax /></div><div className="migration-overlay" />
@@ -420,7 +416,7 @@ function HomePage({ navigate, content, openSafari, onOpenPost }: { navigate: (pa
  * Compact testimonial preview for the homepage. Reads the same approved
  * entries as the full section and links through rather than duplicating it.
  */
-function HomeTestimonialPreview({ navigate }: { navigate: (page: Page) => void }) {
+function HomeTestimonialPreview({ navigate }: { navigate: (page: KnownPage) => void }) {
   // Same rule as TestimonialsSection: never derive a new array inside the
   // store selector, or useSyncExternalStore re-renders forever.
   const allTestimonials = useCmsStore((state) => state.testimonials);
@@ -458,10 +454,10 @@ function HomeTestimonialPreview({ navigate }: { navigate: (page: Page) => void }
   );
 }
 
-function AboutPage({ navigate }: { navigate: (page: Page) => void }) {
+function AboutPage({ navigate }: { navigate: (page: KnownPage) => void }) {
   return (
     <>
-      <PageHero eyebrow="OUR STORY" title="Born here. Still led by wonder." text="An independent East African company creating private journeys with deep local knowledge and a light footprint." image={imagery.portrait} />
+      <PageHero layout="about" />
       <section className="about-intro section-pad"><p className="vertical-label">WHY WE EXIST</p><div><p className="eyebrow" data-reveal>A different measure of luxury</p><h2 className="split-reveal">Not more things. More time, more space, more meaning.</h2><div className="two-column-copy" data-reveal><p>Olkinyei was founded by naturalists who saw that the finest safari was not the fastest route between sightings. It was the one that left room for silence, surprise and genuine connection.</p><p>Today our journeys are still designed in Nairobi and Arusha by people who know these landscapes first-hand. We stay small by choice, pairing each guest with one journey designer and one exceptional guide.</p></div></div></section>
       <section className="story-split"><ImageReveal src={imagery.lion} alt="A lion resting quietly beneath a tree" /><div className="story-split-copy"><p className="eyebrow">OUR PHILOSOPHY</p><h2 className="split-reveal">Wait longer.<br />Go deeper.</h2><p>We avoid sighting-chasing and crowded routes. Longer stays in fewer places reveal the relationships that make an ecosystem whole: a storm gathering, a lioness listening, a guide reading a faint mark in the dust.</p><div className="principles"><div><span>01</span><h3>Private by design</h3><p>Your vehicle, guide and pace are entirely your own.</p></div><div><span>02</span><h3>Local by nature</h3><p>East African ownership keeps knowledge and value close to home.</p></div><div><span>03</span><h3>Light on the land</h3><p>Smaller camps and measured operations protect what draws us here.</p></div></div></div></section>
       <section className="timeline section-pad"><SectionHeading number="02" eyebrow="OUR JOURNEY" title="A small company with a long view." /><div className="timeline-list">{timeline.map((item) => <div key={item.year} data-reveal><strong>{item.year}</strong><span /><p>{item.text}</p></div>)}</div></section>
@@ -472,14 +468,14 @@ function AboutPage({ navigate }: { navigate: (page: Page) => void }) {
 }
 
 function ExperienceModal({ safari, onClose, onBook }: { safari: SafariPackage; onClose: () => void; onBook: (safari: SafariPackage) => void }) {
-  const [image, setImage] = useState(safari.gallery[0] ?? safari.image);
+  const [image, setImage] = useState(safari.image || safari.gallery[0]?.imageUrl || "");
   const closeKey = (event: KeyboardEvent<HTMLDivElement>) => event.key === "Escape" && onClose();
   useEffect(() => { document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = ""; }; }, []);
   return (
     <motion.div className="experience-modal" role="dialog" aria-modal="true" aria-labelledby="experience-title" tabIndex={-1} autoFocus onKeyDown={closeKey} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <motion.div className="experience-sheet" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ duration: 0.65, ease: [0.83, 0, 0.17, 1] }}>
         <button className="sheet-close" onClick={onClose} aria-label="Close safari details"><X /></button>
-        <div className="sheet-gallery"><img src={image} alt={`${safari.title} safari landscape`} /><div>{safari.gallery.map((item, index) => <button key={item} onClick={() => setImage(item)} className={image === item ? "active" : ""} aria-label={`View gallery image ${index + 1}`}><img src={item} alt="" /></button>)}</div></div>
+        <div className="sheet-gallery"><img src={image} alt={safari.gallery.find((item) => item.imageUrl === image)?.altText || `${safari.title} safari landscape`} /><div>{safari.gallery.map((item, index) => <button key={item.id} onClick={() => setImage(item.imageUrl)} className={image === item.imageUrl ? "active" : ""} aria-label={`View gallery image ${index + 1}${item.caption ? `: ${item.caption}` : ""}`}><img src={item.imageUrl} alt={item.altText} /></button>)}</div>{safari.gallery.find((item) => item.imageUrl === image)?.caption && <p>{safari.gallery.find((item) => item.imageUrl === image)?.caption}</p>}</div>
         <div className="sheet-content"><p className="eyebrow">{safari.region}</p><h2 id="experience-title">{safari.title}</h2><p className="sheet-summary">{safari.summary}</p><div className="sheet-facts"><span><Clock3 />{safari.duration}</span><span><CircleDollarSign />From {formatCurrency(safari.price)} pp</span><span><CalendarDays />{safari.availability.join(" / ")}</span></div><div className="route-map" aria-label={`Illustrated route map for ${safari.title}`}><svg viewBox="0 0 500 220" role="img"><path d="M30 175 C120 80 195 190 280 90 S405 130 470 40" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="5 7" /><circle cx="30" cy="175" r="6" /><circle cx="280" cy="90" r="6" /><circle cx="470" cy="40" r="6" /><text x="30" y="205">ARRIVE</text><text x="245" y="120">WILD CAMP</text><text x="410" y="27">FINAL LODGE</text></svg></div><p className="signature"><span>Signature moments</span>{safari.signature}</p><div className="include-grid"><div><h3>Included</h3>{safari.included.length > 0 ? safari.included.map((item) => <p key={item}><Check />{item}</p>) : <p>Every essential is included by default.</p>}</div><div><h3>Not included</h3>{safari.excluded.length > 0 ? safari.excluded.map((item) => <p key={item}><Minus />{item}</p>) : <p>Nothing further is excluded.</p>}</div></div><MagneticButton className="button button--dark" onClick={() => onBook(safari)}>Book this journey <ArrowRight size={17} /></MagneticButton></div>
       </motion.div>
     </motion.div>
@@ -496,7 +492,14 @@ function usePublishedSafaris(): SafariPackage[] {
   const cmsPackages = useCmsStore((state) => state.packages);
   return useMemo(() => cmsPackages
     .filter((pkg) => pkg.published && !pkg.archived)
-    .map((pkg) => ({ ...pkg, gallery: pkg.gallery.length > 0 ? pkg.gallery : [pkg.image] })),
+    .map((pkg) => ({
+      ...pkg,
+      gallery: pkg.gallery.length > 0
+        ? pkg.gallery.slice().sort((a, b) => a.sortOrder - b.sortOrder)
+        : pkg.image
+          ? [{ id: `${pkg.id}-primary`, imageUrl: pkg.image, altText: pkg.title, caption: "", sortOrder: 0 }]
+          : [],
+    })),
   [cmsPackages]);
 }
 
@@ -505,7 +508,7 @@ function ExperiencesPage({ openSafari, onBook }: { openSafari: (safari: SafariPa
   const liveSafaris = usePublishedSafaris();
   const visible = liveSafaris.filter((safari) => region === "All" || safari.region.includes(region));
   return (
-    <><PageHero eyebrow="PRIVATE SAFARIS" title="Journeys measured in moments." text="Eight signature routes, each privately guided and shaped around your pace." image={imagery.cheetah} /><section className="experiences-intro section-pad"><SectionHeading number="01" eyebrow="THE COLLECTION" title="A starting point, never a fixed itinerary." text="Choose the feeling that draws you. We will tailor the route, camps and rhythm to the season and the people travelling." /><div className="filter-bar" aria-label="Filter safaris by region"><Filter size={15} />{["All", "Serengeti", "Maasai Mara", "Tanzania"].map((item) => <button key={item} className={region === item ? "active" : ""} onClick={() => setRegion(item)}>{item}</button>)}</div></section>
+    <><PageHero layout="experiences" /><section className="experiences-intro section-pad"><SectionHeading number="01" eyebrow="THE COLLECTION" title="A starting point, never a fixed itinerary." text="Choose the feeling that draws you. We will tailor the route, camps and rhythm to the season and the people travelling." /><div className="filter-bar" aria-label="Filter safaris by region"><Filter size={15} />{["All", "Serengeti", "Maasai Mara", "Tanzania"].map((item) => <button key={item} className={region === item ? "active" : ""} onClick={() => setRegion(item)}>{item}</button>)}</div></section>
       <section className="experience-catalogue">{visible.map((safari, index) => <article className="experience-item" key={safari.id} data-reveal><button className="experience-image" onClick={() => openSafari(safari)} aria-label={`View ${safari.title}`}><img src={safari.image} alt={`${safari.title} in ${safari.region}`} loading="lazy" /><span>View journey <ArrowRight /></span></button><div className="experience-number">{String(index + 1).padStart(2, "0")}</div><div className="experience-info"><p>{safari.region}</p><h2>{safari.title}</h2><p>{safari.summary}</p><dl><div><dt>Time</dt><dd>{safari.duration}</dd></div><div><dt>From</dt><dd>{formatCurrency(safari.price)} pp</dd></div><div><dt>Season</dt><dd>{safari.availability.slice(0, 4).join(" / ")}</dd></div></dl><div className="experience-actions"><button className="text-link" onClick={() => openSafari(safari)}>View details <ArrowRight size={16} /></button><button className="text-link" onClick={() => onBook(safari)}>Book now <ArrowRight size={16} /></button></div></div></article>)}</section>
       <section className="bespoke-banner"><div><p className="eyebrow">SOMETHING ELSE IN MIND?</p><h2>Let us make the map around you.</h2><p>Tell us what you love, who is travelling and how you want to feel. We will begin with a blank page.</p></div><MagneticButton className="button button--sand" onClick={() => { if (liveSafaris[0]) onBook(liveSafaris[0]); }}>Create a bespoke safari <ArrowRight size={17} /></MagneticButton></section></>
   );
@@ -522,7 +525,7 @@ function DestinationsPage({ onBook }: { onBook: (safari: SafariPackage) => void 
   const list = useMemo(() => destinations.filter((destination) => country === "All" || destination.country === country), [country]);
   useEffect(() => { if (!list.some((item) => item.name === selected.name)) setSelected(list[0]); }, [list, selected.name]);
   return (
-    <><PageHero eyebrow="KENYA + TANZANIA" title="The map is only the beginning." text="From volcanic highlands to endless grassland, explore the places that shape our journeys." image={imagery.mara} /><section className="destinations-map-section"><div className="map-side"><p className="eyebrow">01 / EXPLORE EAST AFRICA</p><h2 className="split-reveal">Move through the wild.</h2><div className="country-switch">{(["All", "Kenya", "Tanzania"] as const).map((item) => <button key={item} onClick={() => setCountry(item)} className={country === item ? "active" : ""}>{item}</button>)}</div><div className="destination-list">{list.map((item) => <button key={item.name} className={selected.name === item.name ? "active" : ""} onClick={() => setSelected(item)}><span>{item.country}</span>{item.name}<ArrowRight /></button>)}</div></div><SafariMap selected={selected} onSelect={setSelected} /><AnimatePresence mode="wait"><motion.div className="destination-focus" key={selected.name} initial={{ opacity: 0, y: 25 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }}><img src={selected.image} alt={`${selected.name} landscape`} /><div><p>{selected.country}</p><h3>{selected.name}</h3><p>{selected.description}</p><dl><div><dt>Best time</dt><dd>{selected.best}</dd></div><div><dt>Known for</dt><dd>{selected.animal}</dd></div></dl></div></motion.div></AnimatePresence></section>
+    <><PageHero layout="destinations" /><section className="destinations-map-section"><div className="map-side"><p className="eyebrow">01 / EXPLORE EAST AFRICA</p><h2 className="split-reveal">Move through the wild.</h2><div className="country-switch">{(["All", "Kenya", "Tanzania"] as const).map((item) => <button key={item} onClick={() => setCountry(item)} className={country === item ? "active" : ""}>{item}</button>)}</div><div className="destination-list">{list.map((item) => <button key={item.name} className={selected.name === item.name ? "active" : ""} onClick={() => setSelected(item)}><span>{item.country}</span>{item.name}<ArrowRight /></button>)}</div></div><SafariMap selected={selected} onSelect={setSelected} /><AnimatePresence mode="wait"><motion.div className="destination-focus" key={selected.name} initial={{ opacity: 0, y: 25 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }}><img src={selected.image} alt={`${selected.name} landscape`} /><div><p>{selected.country}</p><h3>{selected.name}</h3><p>{selected.description}</p><dl><div><dt>Best time</dt><dd>{selected.best}</dd></div><div><dt>Known for</dt><dd>{selected.animal}</dd></div></dl></div></motion.div></AnimatePresence></section>
       <section className="destination-editorial section-pad"><SectionHeading number="02" eyebrow="TWO COUNTRIES, ONE ECOSYSTEM" title="Cross the border. Keep the story whole." text="The migration ignores national lines. Combining Kenya and Tanzania reveals the full movement of herds, weather and seasons." /><div className="country-stories"><article><ImageReveal src={imagery.lion} alt="Lion in the Maasai Mara" /><span>KENYA</span><h3>Intimate conservancies and the open Mara.</h3><p>Night drives, walking and fewer vehicles beyond reserve boundaries.</p></article><article><ImageReveal src={imagery.crater} alt="Wildebeest on Tanzania grassland" /><span>TANZANIA</span><h3>Scale that changes your sense of distance.</h3><p>The Serengeti, crater highlands and elephant paths of Tarangire.</p></article></div></section><section className="map-cta"><p>Not sure where the season will take you?</p><h2>Let the wildlife choose the route.</h2><MagneticButton className="button button--sand" onClick={() => { if (liveSafaris[0]) onBook(liveSafaris[0]); }}>Talk to a safari designer <ArrowRight size={17} /></MagneticButton></section></>
   );
 }
@@ -556,7 +559,7 @@ function JournalPage({ onOpenPost }: { onOpenPost: (slug: string) => void }) {
 
   return (
     <>
-      <PageHero eyebrow="FIELD NOTES & JOURNAL" title="Notes carried back from the bush." text="Field dispatches, photography, wildlife observations and practical guidance from the people who guide these landscapes." image={imagery.cheetah} />
+      <PageHero layout="journal" />
 
       <section className="journal-page section-pad">
         <SectionHeading number="01" eyebrow="FROM THE FIELD" title="Long-form field notes." text="Every article is written by our guides, naturalists and journey designers in East Africa." />
@@ -625,7 +628,7 @@ function JournalPage({ onOpenPost }: { onOpenPost: (slug: string) => void }) {
   );
 }
 
-function JournalPostPage({ slug, onBack, onOpenPost, navigate }: { slug: string; onBack: () => void; onOpenPost: (slug: string) => void; navigate: (page: Page) => void }) {
+function JournalPostPage({ slug, onBack, onOpenPost, navigate }: { slug: string; onBack: () => void; onOpenPost: (slug: string) => void; navigate: (page: KnownPage) => void }) {
   const posts = usePublishedPosts();
   const post = posts.find((item) => item.slug === slug);
   const related = posts.filter((item) => item.slug !== slug).slice(0, 3);
@@ -1022,7 +1025,7 @@ function BookingLookup({ bookings }: { bookings: Booking[] }) {
 
 function ContactPage({ initialSafari, bookings, onStored, content }: { initialSafari: SafariPackage | null; bookings: Booking[]; onStored: (booking: Booking) => void; content: EditableContent }) {
   const site = useCmsStore((state) => state.siteSettings);
-  return <><PageHero eyebrow="PRIVATE JOURNEY DESIGN" title="Your safari starts with a conversation." text="Share a few details. One dedicated designer will shape a thoughtful first proposal within one business day." image={imagery.lodge} /><section className="booking-section section-pad"><div className="booking-aside"><p className="eyebrow">PLAN YOUR JOURNEY</p><h2>There are no ordinary questions.</h2><p>We will consider the season, lodge character, flight connections and the pace that works for your party. Nothing is confirmed until it feels right.</p><div><Headphones /><span>Prefer to speak?</span><a href={`tel:${site.phone.replace(/\s+/g, "")}`}>{site.phone}</a><a href={`mailto:${content.contactEmail}`}>{content.contactEmail}</a></div></div><BookingForm initialSafari={initialSafari} onStored={onStored} /></section><section className="contact-details section-pad"><div><p className="eyebrow">FIELD OFFICES</p><h2>Close to the places we love.</h2></div><address>{site.addresses.map((entry) => <div key={entry.city}><span>{entry.city}</span><strong>{entry.city}</strong><p>{entry.address}<br />Monday to Friday, 08:00 - 18:00 EAT</p></div>)}</address><BookingLookup bookings={bookings} /></section></>;
+  return <><PageHero layout="contact" /><section className="booking-section section-pad"><div className="booking-aside"><p className="eyebrow">PLAN YOUR JOURNEY</p><h2>There are no ordinary questions.</h2><p>We will consider the season, lodge character, flight connections and the pace that works for your party. Nothing is confirmed until it feels right.</p><div><Headphones /><span>Prefer to speak?</span><a href={`tel:${site.phone.replace(/\s+/g, "")}`}>{site.phone}</a><a href={`mailto:${content.contactEmail}`}>{content.contactEmail}</a></div></div><BookingForm initialSafari={initialSafari} onStored={onStored} /></section><section className="contact-details section-pad"><div><p className="eyebrow">FIELD OFFICES</p><h2>Close to the places we love.</h2></div><address>{site.addresses.map((entry) => <div key={entry.city}><span>{entry.city}</span><strong>{entry.city}</strong><p>{entry.address}<br />Monday to Friday, 08:00 - 18:00 EAT</p></div>)}</address><BookingLookup bookings={bookings} /></section></>;
 }
 
 /**
@@ -1057,39 +1060,45 @@ function SiteClosedScreen({ mode }: { mode: "maintenance" | "coming-soon" }) {
 
 function PublicApp() {
   const [page, setPage] = useState<Page>(() => pageFromPath(window.location.pathname));
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const [postSlug, setPostSlug] = useState<string | null>(() => postSlugFromPath(window.location.pathname));
   const [loading, setLoading] = useState(() => {
     try { return !sessionStorage.getItem("olkinyei-intro"); } catch { return true; }
   });
   const [selectedSafari, setSelectedSafari] = useState<SafariPackage | null>(null);
   const [bookingSafari, setBookingSafari] = useState<SafariPackage | null>(null);
   const [bookings, setBookings] = useState<Booking[]>(() => readStorage("olkinyei-bookings", []));
-  const [content] = useState<EditableContent>(() => readStorage("olkinyei-content", defaultContent));
-  const cmsHomePage = useCmsStore((state) => state.pages.find((item) => item.route === "/"));
+  const pages = useCmsStore((state) => state.pages);
+  const cmsHomePage = pages.find((item) => item.layout === "home" && item.status === "published");
   const cmsSettings = useCmsStore((state) => state.siteSettings);
   const publicContent: EditableContent = {
-    homeStatement: String(cmsHomePage?.content.homeStatement || content.homeStatement),
-    conservationStatement: String(cmsHomePage?.content.conservationStatement || content.conservationStatement),
-    contactEmail: cmsSettings.contactEmail || content.contactEmail,
+    homeStatement: String(cmsHomePage?.content.homeStatement ?? ""),
+    conservationStatement: String(cmsHomePage?.content.conservationStatement ?? ""),
+    contactEmail: cmsSettings.contactEmail,
   };
-  const [postSlug, setPostSlug] = useState<string | null>(() => postSlugFromPath(window.location.pathname));
-  const navigate = useCallback((next: Page) => { if (window.location.pathname !== ROUTES[next]) window.history.pushState({}, "", ROUTES[next]); setPage(next); setPostSlug(null); window.scrollTo({ top: 0, behavior: "instant" }); }, []);
+  const navigatePath = useCallback((path: string) => {
+    if (window.location.pathname !== path) window.history.pushState({}, "", path);
+    setCurrentPath(path);
+    setPage(pageFromPath(path));
+    setPostSlug(postSlugFromPath(path));
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, []);
+  const navigate = useCallback((next: KnownPage) => {
+    const layout: Partial<Record<KnownPage, PageSettings["layout"]>> = {
+      home: "home", about: "about", experiences: "experiences", destinations: "destinations",
+      gallery: "journal", journal: "journal", contact: "contact",
+    };
+    const managed = pages.find((item) => item.layout === layout[next] && item.status === "published");
+    navigatePath(managed ? pagePath(managed) : ROUTES[next]);
+  }, [navigatePath, pages]);
   // Article routing: /journal/<slug> keeps deep links and back/forward working.
-  const openPost = useCallback((slug: string) => {
-    window.history.pushState({}, "", `/journal/${slug}`);
-    setPage("journal");
-    setPostSlug(slug);
-    window.scrollTo({ top: 0, behavior: "instant" });
-  }, []);
-  const closePost = useCallback(() => {
-    window.history.pushState({}, "", ROUTES.journal);
-    setPage("journal");
-    setPostSlug(null);
-    window.scrollTo({ top: 0, behavior: "instant" });
-  }, []);
+  const openPost = useCallback((slug: string) => navigatePath(`/journal/${slug}`), [navigatePath]);
+  const closePost = useCallback(() => navigate("journal"), [navigate]);
   const bookSafari = (safari: SafariPackage) => { setSelectedSafari(null); setBookingSafari(safari); navigate("contact"); };
   const completeLoader = useCallback(() => { try { sessionStorage.setItem("olkinyei-intro", "true"); } catch { /* Browsing can continue when storage is blocked. */ } setLoading(false); }, []);
   useEffect(() => {
     const pop = () => {
+      setCurrentPath(window.location.pathname);
       setPage(pageFromPath(window.location.pathname));
       setPostSlug(postSlugFromPath(window.location.pathname));
     };
@@ -1119,24 +1128,26 @@ function PublicApp() {
     return () => { gsap.ticker.remove(update); lenis.destroy(); };
   }, []);
   useEffect(() => {
-    const titles: Record<Page, string> = { home: "Olkinyei Expeditions | Private Luxury Safaris", about: "Our Story | Olkinyei Expeditions", experiences: "Private Safari Experiences | Olkinyei Expeditions", destinations: "Kenya and Tanzania Destinations | Olkinyei Expeditions", gallery: "Field Notes and Gallery | Olkinyei Expeditions", journal: "The Journal | Olkinyei Expeditions", contact: "Plan Your Safari | Olkinyei Expeditions" };
-    const cmsPage = cmsStore.getState().pages.find((item) => item.route === ROUTES[page]);
-    // Article pages take their metadata from the published post itself.
+    const normalizedPath = currentPath === "/" ? "/" : currentPath.replace(/\/$/, "");
+    const cmsPage = postSlug || normalizedPath === "/gallery"
+      ? pages.find((item) => item.layout === "journal" && item.status === "published")
+      : pages.find((item) => item.status === "published" && pagePath(item) === normalizedPath);
     const article = postSlug ? cmsStore.getState().blogPosts.find((item) => item.slug === postSlug && item.status === "published") : undefined;
     const seoTitle = article
-      ? (article.seo.title || `${article.title} | Olkinyei Expeditions`)
-      : cmsPage?.published && cmsPage.seo.title ? cmsPage.seo.title : titles[page];
+      ? (article.seo.title || article.title)
+      : (cmsPage?.seo.title || cmsPage?.title || cmsSettings.brandName);
     const seoDescription = article
       ? (article.seo.description || article.excerpt)
-      : cmsPage?.published && cmsPage.seo.description ? cmsPage.seo.description : page === "home" ? "Private, conservation-led luxury safaris across Kenya and Tanzania, designed by East African naturalists." : `${titles[page]}. Explore private, expertly guided journeys across East Africa.`;
+      : (cmsPage?.seo.description || "");
     document.title = seoTitle;
     document.querySelector('meta[name="description"]')?.setAttribute("content", seoDescription);
     document.querySelector('meta[property="og:title"]')?.setAttribute("content", seoTitle);
-    if (article?.heroImage) document.querySelector('meta[property="og:image"]')?.setAttribute("content", article.heroImage);
-    const routeUrl = `https://olkinyei.com${postSlug ? `/journal/${postSlug}` : ROUTES[page]}`;
+    const socialImage = article?.heroImage || cmsPage?.featuredImage;
+    if (socialImage) document.querySelector('meta[property="og:image"]')?.setAttribute("content", socialImage);
+    const routeUrl = `https://olkinyei.com${currentPath}`;
     document.querySelector('meta[property="og:url"]')?.setAttribute("content", routeUrl);
     document.querySelector('link[rel="canonical"]')?.setAttribute("href", routeUrl);
-  }, [page, postSlug, cmsHomePage, cmsSettings]);
+  }, [currentPath, pages, postSlug, cmsSettings.brandName]);
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--burnt", cmsSettings.primaryColor);
@@ -1159,18 +1170,23 @@ function PublicApp() {
     return () => { window.clearTimeout(refresh); splits.forEach((split) => split.revert()); context.revert(); };
   }, [page, loading]);
   const pageContent = useMemo(() => {
-    if (page === "home") return <HomePage navigate={navigate} content={publicContent} openSafari={setSelectedSafari} onOpenPost={openPost} />;
-    if (page === "about") return <AboutPage navigate={navigate} />;
-    if (page === "experiences") return <ExperiencesPage openSafari={setSelectedSafari} onBook={bookSafari} />;
-    if (page === "destinations") return <DestinationsPage onBook={bookSafari} />;
-    if (page === "journal") {
-      return postSlug
-        ? <JournalPostPage slug={postSlug} onBack={closePost} onOpenPost={openPost} navigate={navigate} />
-        : <JournalPage onOpenPost={openPost} />;
-    }
-    return <ContactPage initialSafari={bookingSafari} bookings={bookings} content={publicContent} onStored={(booking) => setBookings((current) => current.some((item) => item.reference === booking.reference) ? current : [booking, ...current])} />;
-  }, [page, postSlug, navigate, openPost, closePost, publicContent.homeStatement, publicContent.conservationStatement, publicContent.contactEmail, bookingSafari, bookings]);
-  return <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><CustomCursor /><AnimatePresence>{loading && <Loader onComplete={completeLoader} />}</AnimatePresence>{!loading && <Header page={page} navigate={navigate} />}<AnimatePresence mode="wait">{!loading && <motion.main id="main-content" key={postSlug ? `journal-${postSlug}` : page} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>{pageContent}<Footer navigate={navigate} /></motion.main>}</AnimatePresence><AnimatePresence>{selectedSafari && <ExperienceModal safari={selectedSafari} onClose={() => setSelectedSafari(null)} onBook={bookSafari} />}</AnimatePresence></div>;
+    const normalizedPath = currentPath === "/" ? "/" : currentPath.replace(/\/$/, "");
+    const managedPage = postSlug || normalizedPath === "/gallery"
+      ? pages.find((item) => item.layout === "journal" && item.status === "published")
+      : pages.find((item) => item.status === "published" && pagePath(item) === normalizedPath);
+    if (!managedPage) return <PageNotFound />;
+    if (managedPage.layout === "home") return <HomePage navigate={navigate} content={publicContent} openSafari={setSelectedSafari} onOpenPost={openPost} />;
+    if (managedPage.layout === "about") return <AboutPage navigate={navigate} />;
+    if (managedPage.layout === "experiences") return <ExperiencesPage openSafari={setSelectedSafari} onBook={bookSafari} />;
+    if (managedPage.layout === "destinations") return <DestinationsPage onBook={bookSafari} />;
+    if (managedPage.layout === "journal") return postSlug
+      ? <JournalPostPage slug={postSlug} onBack={closePost} onOpenPost={openPost} navigate={navigate} />
+      : <JournalPage onOpenPost={openPost} />;
+    if (managedPage.layout === "contact") return <ContactPage initialSafari={bookingSafari} bookings={bookings} content={publicContent} onStored={(booking) => setBookings((current) => current.some((item) => item.reference === booking.reference) ? current : [booking, ...current])} />;
+    return <DynamicCmsPage page={managedPage} />;
+  }, [currentPath, pages, postSlug, navigate, openPost, closePost, publicContent.homeStatement, publicContent.conservationStatement, publicContent.contactEmail, bookingSafari, bookings]);
+  return <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><CustomCursor /><AnimatePresence>{loading && <Loader onComplete={completeLoader} />}</AnimatePresence>{!loading && <Header currentPath={currentPath} navigatePath={navigatePath} />}<AnimatePresence mode="wait">{!loading && <motion.main id="main-content" key={postSlug ? `journal-${postSlug}` : currentPath} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>{pageContent}<Footer navigatePath={navigatePath} /></motion.main>}</AnimatePresence><AnimatePresence>{selectedSafari && <ExperienceModal safari={selectedSafari} onClose={() => setSelectedSafari(null)} onBook={bookSafari} />}</AnimatePresence></div>;
+
 }
 
 function isAdminRoute() {

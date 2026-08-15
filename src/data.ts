@@ -86,10 +86,3 @@ export const timeline = [
   { year: "2022", text: "The guide fellowship opens, supporting a new generation of East African storytellers." },
   { year: "Today", text: "A small, independent team still creates every expedition by hand." },
 ];
-
-export const blogPosts = [
-  { title: "Reading the River: A Guide to the Great Migration", category: "Wildlife", date: "12 May 2026", image: imagery.migration },
-  { title: "What to Pack When the Dust Is Part of the Story", category: "Packing", date: "28 April 2026", image: imagery.lodge },
-  { title: "The Ethics of the Wildlife Photograph", category: "Photography", date: "09 March 2026", image: imagery.cheetah },
-  { title: "Kenya and Tanzania Entry Notes for 2026", category: "Visa", date: "18 February 2026", image: imagery.mara },
-];

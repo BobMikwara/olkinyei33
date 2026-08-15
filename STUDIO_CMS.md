@@ -16,18 +16,27 @@ VITE_SUPABASE_URL=https://<project>.supabase.co
 VITE_SUPABASE_ANON_KEY=<anon-key>
 ```
 
-Run the migrations in this order: `supabase/schema.sql` → `supabase/production_auth.sql` (superseded pointer) → `supabase/auth_schema_sync.sql` → `supabase/bookings_hardening.sql`. The sync migration normalises legacy role values in place and is idempotent.
+Run the migrations in the exact order below. The sync migrations are idempotent and preserve existing content while aligning role, page, package-gallery, and storage policies.
 
 ### 2. Apply the database schema
 
 Run in order inside the Supabase SQL editor:
 
 1. `supabase/schema.sql` — content tables + baseline RLS
-2. `supabase/production_auth.sql` — hardened profiles, audit logs, root triggers
-3. `supabase/packages_sync.sql` — Safari Packages (`public.packages`) canonical schema, RLS, and seed data (the single source of truth shared by the CMS and the public website)
-4. `supabase/cms_tokens.sql` — offline-mode setup tokens (optional fallback tables)
+2. `supabase/auth_schema_sync.sql` — hardened profiles, audit logs, root triggers
+3. `supabase/role_canonicalization.sql` — one role vocabulary across database and TypeScript
+4. `supabase/cms_content.sql` — global site settings document
+5. `supabase/pages_sync.sql` — normalized CMS Pages, legacy JSON migration, status-aware RLS, and Realtime
+6. `supabase/packages_sync.sql` — Safari Packages, ordered multi-image gallery migration, existing Storage bucket policies, RLS, and seed data
+7. `supabase/blog_posts_sync.sql` — Journal records
+8. `supabase/bookings_hardening.sql` — booking workflow policies
 
-`production_auth.sql` grants no client insert/update/delete on `profiles`, adds `audit_logs`, and installs triggers that make the Root Super Admin immutable from the client.
+`pages_sync.sql` removes the old `cms_content/pages` document only after its
+records have been copied. `packages_sync.sql` reuses `packages.gallery` and the
+existing `expedition-media` bucket; it does not create a second image table or
+bucket.
+
+`auth_schema_sync.sql` grants no unsafe client writes on `profiles`, adds `audit_logs`, and installs triggers that make the Root Super Admin immutable from the client.
 
 ### 3. Provision the first Root Super Admin ONCE
 

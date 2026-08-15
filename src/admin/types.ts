@@ -230,6 +230,18 @@ export type Booking = {
  * `public.packages.excluded` jsonb array. The "Not included" label used in
  * the CMS/public UI is simply the display name for `excluded`.
  */
+export type SafariPackageImage = {
+  /** Stable client/database identity stored inside packages.gallery JSONB. */
+  id: string;
+  /** Maps to the JSON object's `image_url` key. */
+  imageUrl: string;
+  /** Maps to `alt_text`. */
+  altText: string;
+  caption: string;
+  /** Explicit database-backed ordering; never inferred from upload time. */
+  sortOrder: number;
+};
+
 export type SafariPackage = {
   id: string;
   slug: string;
@@ -239,8 +251,10 @@ export type SafariPackage = {
   nights: number;
   price: number;
   discount?: number;
+  /** Maps to packages.hero_image and remains the one primary image. */
   image: string;
-  gallery: string[];
+  /** Maps to packages.gallery JSONB; supports any number of image records. */
+  gallery: SafariPackageImage[];
   summary: string;
   description: string;
   signature: string;
@@ -426,19 +440,34 @@ export type Customer = {
   createdAt: string;
 };
 
+export const PAGE_STATUSES = ["draft", "published", "archived"] as const;
+export type PageStatus = (typeof PAGE_STATUSES)[number];
+
+/**
+ * Authoritative page model mapped one-to-one from `public.pages`.
+ * Snake-case database fields are translated only by the mapping functions in
+ * store.ts. `slug = "home"` is the root route; every other slug resolves to
+ * `/<slug>` through the shared pagePath() helper.
+ */
 export type PageSettings = {
   id: string;
-  route: string;
+  slug: string;
   title: string;
+  content: { body: string; [key: string]: unknown };
+  featuredImage: string;
   heroTitle: string;
   heroEyebrow: string;
   heroText: string;
-  heroImage: string;
-  content: Record<string, unknown>;
-  published: boolean;
-  seo: { title: string; description: string; keywords: string[] };
+  status: PageStatus;
+  /** Existing specialist React layout, or `standard` for CMS-created pages. */
+  layout: "standard" | "home" | "about" | "experiences" | "destinations" | "journal" | "contact";
+  navigationLabel: string;
+  showInNavigation: boolean;
+  sortOrder: number;
+  seo: { title: string; description: string };
+  createdAt: string;
   updatedAt: string;
-  updatedBy: string;
+  updatedBy?: string;
 };
 
 export type SiteSettings = {

@@ -56,6 +56,72 @@ update public.packages set created_at = updated_at where created_at is null;
 alter table public.packages alter column created_at set default now();
 alter table public.packages alter column created_at set not null;
 
+-- `gallery` already existed and is therefore extended rather than replaced by
+-- a competing package_images table. Each JSONB array entry is now an ordered
+-- image record:
+--   id · image_url · alt_text · caption · sort_order
+-- Legacy string URLs are migrated in place. JSON array order is preserved and
+-- made explicit through sort_order. The existing hero_image remains the one
+-- authoritative primary image used by cards and listings.
+update public.packages package
+set gallery = coalesce((
+  select jsonb_agg(
+    case
+      when jsonb_typeof(image.value) = 'string' then jsonb_build_object(
+        'id', gen_random_uuid()::text,
+        'image_url', image.value #>> '{}',
+        'alt_text', package.title,
+        'caption', '',
+        'sort_order', (image.ordinality - 1)::integer
+      )
+      else image.value
+        || jsonb_build_object(
+          'id', coalesce(nullif(image.value ->> 'id', ''), gen_random_uuid()::text),
+          'image_url', coalesce(image.value ->> 'image_url', image.value ->> 'url', ''),
+          'alt_text', coalesce(image.value ->> 'alt_text', ''),
+          'caption', coalesce(image.value ->> 'caption', ''),
+          'sort_order', (image.ordinality - 1)::integer
+        )
+    end
+    order by image.ordinality
+  )
+  from jsonb_array_elements(package.gallery) with ordinality as image(value, ordinality)
+), '[]'::jsonb)
+where exists (
+  select 1 from jsonb_array_elements(package.gallery) entry
+  where jsonb_typeof(entry) = 'string'
+     or not (entry ? 'image_url')
+     or not (entry ? 'sort_order')
+);
+
+-- Preserve a legacy hero image even if its old gallery array omitted it.
+update public.packages package
+set gallery = jsonb_build_array(jsonb_build_object(
+  'id', gen_random_uuid()::text,
+  'image_url', package.hero_image,
+  'alt_text', package.title,
+  'caption', '',
+  'sort_order', 0
+)) || (
+  select coalesce(jsonb_agg(
+    entry.value || jsonb_build_object('sort_order', entry.ordinality::integer)
+    order by entry.ordinality
+  ), '[]'::jsonb)
+  from jsonb_array_elements(package.gallery) with ordinality entry(value, ordinality)
+)
+where nullif(package.hero_image, '') is not null
+  and not exists (
+    select 1 from jsonb_array_elements(package.gallery) entry
+    where entry ->> 'image_url' = package.hero_image
+  );
+
+-- The strict record constraint is re-added after the legacy-format seed block;
+-- drop it here so rerunning this migration remains idempotent.
+alter table public.packages drop constraint if exists packages_gallery_records_check;
+alter table public.packages drop constraint if exists packages_gallery_array_check;
+alter table public.packages
+  add constraint packages_gallery_array_check check (jsonb_typeof(gallery) = 'array');
+
 -- 3. Keep updated_at honest on direct SQL edits (the CMS writes via the API).
 create or replace function public.packages_touch_updated_at()
 returns trigger
@@ -64,6 +130,9 @@ set search_path = public
 as $$
 begin
   new.updated_at := now();
+  if new.archived then
+    new.published := false;
+  end if;
   return new;
 end;
 $$;
@@ -74,11 +143,27 @@ create trigger packages_touch_updated_at
   for each row execute function public.packages_touch_updated_at();
 
 -- 4. Row-level security.
---    Public visitors read published packages only; any authenticated staff
---    member (root · super_admin · content_manager · booking_manager ·
---    marketing_manager · finance) can read AND manage every package,
---    including drafts. `public.is_staff()` is (re)defined with canonical
---    role names by supabase/role_canonicalization.sql.
+--    Public visitors read published packages only. All active staff may read
+--    drafts for operational context, but only CMS content roles may mutate
+--    packages. Reservation and finance users are intentionally read-only.
+create or replace function public.can_manage_packages()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid()
+      and status = 'active'
+      and (
+        is_root = true
+        or role in ('root', 'super_admin', 'content_manager')
+      )
+  );
+$$;
+
 alter table public.packages enable row level security;
 
 drop policy if exists "Public can read published packages" on public.packages;
@@ -87,7 +172,7 @@ drop policy if exists "Staff can manage packages" on public.packages;
 
 create policy "Public can read published packages" on public.packages
   for select
-  using (published = true or public.is_staff());
+  using ((published = true and archived = false) or public.is_staff());
 
 create policy "Staff can read all packages" on public.packages
   for select to authenticated
@@ -95,8 +180,50 @@ create policy "Staff can read all packages" on public.packages
 
 create policy "Staff can manage packages" on public.packages
   for all to authenticated
-  using (public.is_staff())
-  with check (public.is_staff());
+  using (public.can_manage_packages())
+  with check (public.can_manage_packages());
+
+-- Reuse the existing expedition-media bucket. Content and marketing roles can
+-- upload/delete media; reservation and finance users cannot. The public site
+-- can read the bucket because package gallery URLs are public content.
+create or replace function public.can_manage_media()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid()
+      and status = 'active'
+      and (
+        is_root = true
+        or role in ('root', 'super_admin', 'content_manager', 'marketing_manager')
+      )
+  );
+$$;
+
+insert into storage.buckets (id, name, public)
+values ('expedition-media', 'expedition-media', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists "Public expedition media" on storage.objects;
+drop policy if exists "Staff upload expedition media" on storage.objects;
+drop policy if exists "Staff update expedition media" on storage.objects;
+drop policy if exists "Staff delete expedition media" on storage.objects;
+create policy "Public expedition media" on storage.objects
+  for select using (bucket_id = 'expedition-media');
+create policy "Staff upload expedition media" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'expedition-media' and public.can_manage_media());
+create policy "Staff update expedition media" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'expedition-media' and public.can_manage_media())
+  with check (bucket_id = 'expedition-media' and public.can_manage_media());
+create policy "Staff delete expedition media" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'expedition-media' and public.can_manage_media());
 
 -- 5. Realtime so the CMS and public site stay in sync without a refresh.
 do $$
@@ -211,6 +338,46 @@ values
 )
 on conflict (slug) do nothing;
 
+-- The seed statement intentionally retains the historic URL arrays for easy
+-- review. Normalize newly inserted seed rows through the exact same JSON shape
+-- as migrated production rows.
+update public.packages package
+set gallery = (
+  select jsonb_agg(jsonb_build_object(
+    'id', gen_random_uuid()::text,
+    'image_url', image.value #>> '{}',
+    'alt_text', package.title,
+    'caption', '',
+    'sort_order', (image.ordinality - 1)::integer
+  ) order by image.ordinality)
+  from jsonb_array_elements(package.gallery) with ordinality as image(value, ordinality)
+)
+where exists (
+  select 1 from jsonb_array_elements(package.gallery) entry
+  where jsonb_typeof(entry) = 'string'
+);
+
+create or replace function public.package_gallery_is_valid(value jsonb)
+returns boolean
+language sql
+immutable
+set search_path = public
+as $$
+  select jsonb_typeof(value) = 'array'
+    and not exists (
+      select 1
+      from jsonb_array_elements(value) image
+      where jsonb_typeof(image) <> 'object'
+         or nullif(image ->> 'id', '') is null
+         or nullif(image ->> 'image_url', '') is null
+         or not (image ? 'sort_order')
+    );
+$$;
+
+alter table public.packages drop constraint if exists packages_gallery_records_check;
+alter table public.packages
+  add constraint packages_gallery_records_check check (public.package_gallery_is_valid(gallery));
+
 -- ============================================================================
 -- Verification
 -- ============================================================================
@@ -219,4 +386,15 @@ on conflict (slug) do nothing;
 --
 -- The CMS (authenticated staff) should see every row, including drafts:
 --   select count(*) from public.packages;  -- ≥ 8
+-- Every gallery entry must carry an explicit order and URL:
+--   select p.slug, image
+--   from public.packages p, lateral jsonb_array_elements(p.gallery) image
+--   where not (image ? 'image_url') or not (image ? 'sort_order');
+--   -- must return 0 rows
+-- Every legacy hero is retained in its package gallery:
+--   select slug from public.packages p
+--   where hero_image <> '' and not exists (
+--     select 1 from jsonb_array_elements(p.gallery) image
+--     where image ->> 'image_url' = p.hero_image
+--   ); -- must return 0 rows
 -- ============================================================================

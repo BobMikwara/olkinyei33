@@ -1,13 +1,9 @@
--- CMS content persistence: brand + page content live in the cloud so every
--- device sees the same public site. This joins bookings/auth on Supabase.
---
--- Two documents are stored: 'site_settings' (brand identity, colors,
--- contact, analytics) and 'pages' (each route's hero content + SEO).
--- The public website reads them; staff write via the CMS. Publish changes
--- instantly reach every open tab through Realtime.
+-- Global site-settings persistence. CMS pages were normalized into individual
+-- `public.pages` rows by pages_sync.sql; this table deliberately owns only the
+-- global site_settings document so there is no duplicate page store.
 
 create table if not exists public.cms_content (
-  id text primary key check (id in ('site_settings', 'pages')),
+  id text primary key check (id = 'site_settings'),
   content jsonb not null,
   updated_at timestamptz not null default now()
 );
@@ -38,21 +34,20 @@ create policy "Public can read cms content" on public.cms_content
 
 create policy "Staff can write cms content" on public.cms_content
   for all to authenticated
-  using (public.is_staff() or public.is_root_admin());
+  using (public.is_staff() or public.is_root_admin())
+  with check (public.is_staff() or public.is_root_admin());
 
--- Realtime: every open browser tab updates in-place.
 do $$
 begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'cms_content'
-  ) then
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'cms_content'
+    ) then
     alter publication supabase_realtime add table public.cms_content;
   end if;
 end $$;
 
--- Seed the defaults so the first sync has content.
-insert into public.cms_content (id, content) values
-  ('site_settings', '{}'::jsonb),
-  ('pages', '[]'::jsonb)
+insert into public.cms_content (id, content)
+values ('site_settings', '{}'::jsonb)
 on conflict (id) do nothing;

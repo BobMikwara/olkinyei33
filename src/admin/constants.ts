@@ -101,6 +101,8 @@ export const TABLES = {
   testimonials: "testimonials",
   auditLogs: "audit_logs",
   cmsContent: "cms_content",
+  pages: "pages",
+  packages: "packages",
 } as const;
 
 /** Privileged serverless endpoints (service-role work happens there). */

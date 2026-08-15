@@ -21,15 +21,15 @@ A cinematic six-page luxury safari experience for Olkinyei Expeditions. The appl
 3. Add your Supabase project URL and publishable key.
 4. Start the Vite development server with `npm run dev`.
 
-Without Supabase credentials, the site enters a clearly labelled demonstration mode. Bookings, content edits, prices, and media changes persist in local storage. The demo admin code is `OLK2026`. This fallback is intended for design review only, not production.
+Supabase is required for CMS-managed Pages and Safari Packages. Those records are never seeded or edited only in the browser: when cloud configuration is absent, the CMS shows an actionable configuration error instead of creating a competing local content store.
 
 ## Supabase Setup
 
 1. Create a Supabase project.
-2. Run `supabase/schema.sql` in the SQL editor.
+2. Run the migrations in the order listed in `SCHEMA_AUDIT.md`: schema, auth sync, role canonicalization, CMS settings, Pages, Packages/gallery, Blog, then Bookings.
 3. Create the first staff user in Authentication.
-4. Add a matching row to `public.profiles` with the user's auth UUID and role `admin`.
-5. Enable Realtime for `public.bookings` if the final statement in the schema is skipped by an existing publication.
+4. Add a matching `public.profiles` row with the user's auth UUID and canonical role (`root` for the protected first administrator).
+5. Confirm Realtime includes `pages`, `packages`, `blog_posts`, and `bookings`.
 6. Deploy `supabase/functions/send-booking-confirmation`.
 7. Configure `RESEND_API_KEY`, `BOOKING_TEAM_EMAIL`, and `BOOKING_FROM_EMAIL` as Edge Function secrets.
 8. Add the Vite public credentials from `.env.example` to the Vercel project.
