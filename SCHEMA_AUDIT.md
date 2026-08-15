@@ -114,18 +114,37 @@ row model. No code references a non-existent column.
 
 ---
 
-## 7. Verified consistent (no action)
+## 7. Pages and Safari package images — AUDITED AND NORMALIZED
+
+- The repository schema contained **no `public.pages` table**. Pages were one
+  JSON array under `cms_content.id = 'pages'`. `pages_sync.sql` migrates each
+  object into `public.pages`, then removes that legacy document. This is a
+  migration of the existing page system, not a parallel hardcoded system.
+- The repository already contained `packages.gallery jsonb` and the global
+  `gallery` table has no package foreign key. Creating a relationship table
+  would duplicate the package gallery, so the existing JSONB array is extended
+  to ordered image records. Legacy URL strings and `hero_image` are preserved.
+- Database names remain snake_case. The only camelCase names are explicit
+  TypeScript mappings in `store.ts`.
+- The existing `expedition-media` bucket is reused; no bucket and no
+  service-role browser credential were introduced.
+
+---
+
+## 8. Verified consistent (no action)
 
 | Area | Result |
 | ---- | ------ |
 | `bookings` | `toRow` / `fromRow` in `src/lib/supabase.ts` map every column exactly (`customer_name`, `special_requests`, `payment_preference`, `start_date`, `end_date`). No phantom fields. |
 | `blog_posts` | `blogPostToRow` / `blogPostFromRow` cover all columns; ordering uses `published_at`, which exists in every schema version. |
-| `cms_content` | Two fixed document ids (`site_settings`, `pages`) matching the CHECK constraint. |
+| `pages` | `pageFromRow` / `pageToRow` map every snake-case column. Slugs are lowercase/unique, statuses are exactly `draft`, `published`, or `archived`, and public RLS exposes only published rows. |
+| `cms_content` | One fixed `site_settings` document. The legacy `pages` JSON document is migrated and removed by `pages_sync.sql`, eliminating the duplicate page store. |
+| `packages.gallery` | Existing JSONB gallery reused (no `package_images` duplicate). Entries map through `packageImageFromValue` as `id`, `image_url`, `alt_text`, `caption`, and `sort_order`; `hero_image` remains the sole primary image. |
 | `profiles` | `ProfileRow` matches the table 1:1 after the role fix. |
-| Storage buckets | Only `expedition-media` is referenced, and it is created in `schema.sql`. |
+| Storage buckets | Only the existing `expedition-media` bucket is referenced. Authenticated content roles upload; public visitors read. |
 | RPC calls | None. All privileged work goes through `/api/*` serverless functions. |
 | Environment variables | Only `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in frontend code; `process.env` appears exclusively in `api/*` (server-side, correct). |
-| Console logging | Every statement is `import.meta.env.DEV`-gated except two deliberate production diagnostics for silent-failure classes (blog load failure, privileged API failure). Neither logs secrets. |
+| Console logging | Content-load failures for Pages, Packages, Blog, and privileged APIs emit actionable production diagnostics. No diagnostic logs credentials or row content. |
 
 ---
 
@@ -135,10 +154,11 @@ row model. No code references a non-existent column.
 1. supabase/schema.sql
 2. supabase/auth_schema_sync.sql
 3. supabase/role_canonicalization.sql   ← new, required
-4. supabase/packages_sync.sql           ← Safari Packages schema + RLS + seed
-5. supabase/blog_posts_sync.sql
-6. supabase/bookings_hardening.sql
-7. supabase/cms_content.sql
+4. supabase/cms_content.sql             ← global site settings only
+5. supabase/pages_sync.sql               ← normalized Pages + legacy JSON migration
+6. supabase/packages_sync.sql            ← Packages + ordered gallery migration + Storage RLS
+7. supabase/blog_posts_sync.sql
+8. supabase/bookings_hardening.sql
 ```
 
 Verification query — must return zero rows:
